@@ -1,5 +1,5 @@
 use iced::widget::{column, container, text_input, Column};
-use iced::{Theme, Element, Error, Alignment, Color, Settings, Length};
+use iced::{Theme, Element, Error, Alignment, Color, Settings, Length, Font};
 use iced::theme;
 use iced::{keyboard, Event, Subscription, window};
 use iced::alignment;
@@ -145,7 +145,8 @@ fn view(state: &StockScreener) -> Element<Message> {
     let ticker_input_field = text_input("Enter Ticker (e.g., AAPL)", &state.ticker_input)
         .on_input(Message::TickerInputChanged)
         .on_submit(Message::LoadData)
-        .padding(10);
+        .padding(10)
+        .font(Font::with_name("JetBrains Mono"));
 
     let price_chart_view = ChartWidget::new(&state.price_chart_state)
         .width(Length::Fill)
@@ -260,7 +261,7 @@ impl Chart<Message> for ChartState {
                 ChartType::Volume => "Volume Data Not Available",
             };
             let mut chart = chart_builder
-                .caption(caption, ("sans-serif", 20).into_font().color(&WHITE.mix(0.2)))
+                .caption(caption, ("JetBrains Mono", 20).into_font().color(&WHITE.mix(0.2)))
                 .margin(5)
                 .set_all_label_area_size(50) 
                 .build_cartesian_2d(0f32..10f32, 0f32..10f32)
@@ -268,8 +269,8 @@ impl Chart<Message> for ChartState {
             chart.configure_mesh()
                 .set_all_tick_mark_size(0)
                 .axis_style(WHITE.mix(0.2))
-                .y_label_style(("sans-serif", 15).into_font().color(&WHITE.mix(0.2)))
-                .x_label_style(("sans-serif", 15).into_font().color(&WHITE.mix(0.2)))
+                .y_label_style(("JetBrains Mono", 15).into_font().color(&WHITE.mix(0.2)))
+                .x_label_style(("JetBrains Mono", 15).into_font().color(&WHITE.mix(0.2)))
                 .draw().expect("Failed to draw mesh");
             return;
         }
@@ -294,7 +295,7 @@ impl Chart<Message> for ChartState {
                     .y_labels(5)
                     .y_label_formatter(&|y| format!("${:.0}", y))
                     .axis_style(WHITE.mix(0.2))
-                    .y_label_style(("sans-serif", 15).into_font().color(&WHITE.mix(0.2)))
+                    .y_label_style(("JetBrains Mono", 15).into_font().color(&WHITE.mix(0.2)))
                     .bold_line_style(WHITE.mix(0.05).stroke_width(1))
                     .draw().expect("Failed to draw price mesh");
 
@@ -333,7 +334,7 @@ impl Chart<Message> for ChartState {
                         }
                     })
                     .axis_style(WHITE.mix(0.2))
-                    .y_label_style(("sans-serif", 15).into_font().color(&WHITE.mix(0.2)))
+                    .y_label_style(("JetBrains Mono", 15).into_font().color(&WHITE.mix(0.2)))
                     .draw().expect("Failed to draw volume mesh");
 
                 volume_chart_context.draw_series(self.data.iter().enumerate().map(|(idx, data)| {
