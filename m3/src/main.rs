@@ -253,21 +253,13 @@ impl Chart<Message> for ChartState {
 
     fn build_chart<DB: DrawingBackend>(&self, _state: &Self::State, mut chart_builder: ChartBuilder<DB>) {
         if self.data.is_empty() {
-            let caption = match self.chart_type {
-                ChartType::Price => "Price Data Not Available",
-                ChartType::Volume => "Volume Data Not Available",
-            };
             let mut chart = chart_builder
-                .caption(caption, ("JetBrains Mono", 20).into_font().color(&WHITE.mix(0.2)))
                 .margin(5)
-                .set_all_label_area_size(50) 
                 .build_cartesian_2d(0f32..10f32, 0f32..10f32)
                 .expect("Failed to build chart");
             chart.configure_mesh()
                 .set_all_tick_mark_size(0)
                 .axis_style(WHITE.mix(0.2))
-                .y_label_style(("JetBrains Mono", 15).into_font().color(&WHITE.mix(0.2)))
-                .x_label_style(("JetBrains Mono", 15).into_font().color(&WHITE.mix(0.2)))
                 .draw().expect("Failed to draw mesh");
             return;
         }
@@ -282,17 +274,13 @@ impl Chart<Message> for ChartState {
 
                 let mut price_chart_context = chart_builder
                     .margin(5)
-                    .set_all_label_area_size(50)
                     .build_cartesian_2d(x_range.clone(), min_low..max_high)
                     .expect("Failed to build price chart");
 
                 price_chart_context.configure_mesh()
                     .set_all_tick_mark_size(0)
                     .disable_x_mesh()
-                    .y_labels(5)
-                    .y_label_formatter(&|y| format!("${:.0}", y))
-                    .axis_style(WHITE.mix(0.2))
-                    .y_label_style(("JetBrains Mono", 15).into_font().color(&WHITE.mix(0.2)))
+                    .axis_style(BLACK)
                     .bold_line_style(WHITE.mix(0.05).stroke_width(1))
                     .draw().expect("Failed to draw price mesh");
 
@@ -311,27 +299,13 @@ impl Chart<Message> for ChartState {
 
                 let mut volume_chart_context = chart_builder
                     .margin(5)
-                    .set_all_label_area_size(50)
                     .build_cartesian_2d(x_range.clone(), 0.0..max_volume)
                     .expect("Failed to build volume chart");
 
                 volume_chart_context.configure_mesh()
                     .set_all_tick_mark_size(0)
                     .disable_x_mesh()
-                    .y_labels(3)
-                    .y_label_formatter(&|v| { 
-                        if *v >= 1_000_000_000.0 {
-                            format!("{:.0}B", *v / 1_000_000_000.0)
-                        } else if *v >= 1_000_000.0 {
-                            format!("{:.0}M", *v / 1_000_000.0)
-                        } else if *v >= 1_000.0 {
-                            format!("{:.0}K", *v / 1_000.0)
-                        } else {
-                            format!("{:.0}", *v)
-                        }
-                    })
-                    .axis_style(WHITE.mix(0.2))
-                    .y_label_style(("JetBrains Mono", 15).into_font().color(&WHITE.mix(0.2)))
+                    .axis_style(BLACK)
                     .draw().expect("Failed to draw volume mesh");
 
                 volume_chart_context.draw_series(self.data.iter().enumerate().map(|(idx, data)| {
