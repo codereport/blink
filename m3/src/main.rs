@@ -1,10 +1,14 @@
 use iced::widget::{column, container, text_input, Column};
-use iced::{Theme, Element, Length, Settings, Task, Error, Alignment, Renderer, Color};
+use iced::{Theme, Element, Error, Alignment, Color, Settings, Length};
 use iced::theme;
+use iced::{keyboard, Event, Subscription, window};
+use iced::alignment;
+use iced::event;
 use plotters::prelude::*;
 use plotters::style::Color as PlottersColor;
 use plotters_iced::{Chart, ChartWidget, DrawingBackend, ChartBuilder};
 use std::path::PathBuf;
+use iced::{Task};
 
 // Custom deserialization for the timestamp
 mod custom_date_format {
@@ -41,15 +45,26 @@ struct StockData {
     volume: f64,
 }
 
-// Main function using iced::application
+// Main function using iced::Application trait
 fn main() -> Result<(), Error> {
-    iced::application("Stock Screener", StockScreener::update, StockScreener::view)
-        .settings(Settings {
-            antialiasing: true,
-            ..Settings::default()
+    iced::application("Stock Screener", update, view)
+        .theme(theme)
+        .subscription(subscription)
+        .run_with(|| {
+            let initial_state = StockScreener {
+                ticker_input: "NVDA".to_string(),
+                stock_data: Vec::new(),
+                price_chart_state: ChartState::new(ChartType::Price, Vec::new()),
+                volume_chart_state: ChartState::new(ChartType::Volume, Vec::new()),
+                current_theme: Theme::Dark,
+                is_fullscreen: false,
+            };
+            let initial_task = Task::perform(
+                load_stock_data("NVDA".to_string()),
+                Message::DataLoaded,
+            );
+            (initial_state, initial_task)
         })
-        .theme(StockScreener::theme)
-        .run_with(|| (StockScreener::new(), Task::none()))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -64,6 +79,7 @@ struct StockScreener {
     price_chart_state: ChartState,
     volume_chart_state: ChartState,
     current_theme: Theme,
+    is_fullscreen: bool, // To track fullscreen state
 }
 
 #[derive(Debug, Clone)]
@@ -71,93 +87,128 @@ enum Message {
     TickerInputChanged(String),
     LoadData,
     DataLoaded(Result<Vec<StockData>, String>),
+    CloseApp, // For Ctrl+Q/W
+    ToggleFullscreen, // For F11
+    NoOp, // New variant for unhandled events
 }
 
-impl StockScreener {
-    fn new() -> Self {
-        Self {
-            ticker_input: String::new(),
-            stock_data: Vec::new(),
-            price_chart_state: ChartState::new(ChartType::Price, Vec::new()),
-            volume_chart_state: ChartState::new(ChartType::Volume, Vec::new()),
-            current_theme: Theme::custom("CustomDark".to_string(), theme::Palette {
-                background: Color::BLACK,
-                text: Color::from_rgb(0.7, 0.7, 0.7),
-                primary: Color::from_rgb(0.5, 0.5, 0.5),
-                success: Color::from_rgb(0.0, 1.0, 0.0),
-                danger: Color::from_rgb(1.0, 0.0, 0.0),
-            }),
+// Update function for the new Program API
+fn update(state: &mut StockScreener, message: Message) -> Task<Message> {
+    match message {
+        Message::TickerInputChanged(input) => {
+            state.ticker_input = input;
+            Task::none()
         }
+        Message::LoadData => {
+            let ticker = state.ticker_input.to_uppercase();
+            Task::perform(load_stock_data(ticker), Message::DataLoaded)
+        }
+        Message::DataLoaded(Ok(data)) => {
+            state.stock_data = data;
+            let mut chart_data = Vec::new();
+            if !state.stock_data.is_empty() {
+                let six_months_ago = chrono::Utc::now() - chrono::Duration::days(6 * 30);
+                chart_data = state.stock_data.iter()
+                    .filter(|d| d.timestamp >= six_months_ago)
+                    .cloned()
+                    .collect();
+            }
+            state.price_chart_state.update_data(chart_data.clone());
+            state.volume_chart_state.update_data(chart_data);
+            Task::none()
+        }
+        Message::DataLoaded(Err(e)) => {
+            eprintln!("Error loading data: {}", e);
+            state.stock_data.clear();
+            state.price_chart_state.update_data(Vec::new());
+            state.volume_chart_state.update_data(Vec::new());
+            Task::none()
+        }
+        Message::CloseApp => {
+            iced::exit()
+        }
+        Message::ToggleFullscreen => {
+            state.is_fullscreen = !state.is_fullscreen;
+            let new_mode = if state.is_fullscreen {
+                window::Mode::Fullscreen
+            } else {
+                window::Mode::Windowed
+            };
+            window::get_latest().and_then(move |id| window::change_mode(id, new_mode))
+        }
+        Message::NoOp => Task::none(),
     }
+}
 
-    fn update(&mut self, message: Message) -> Task<Message> {
-        match message {
-            Message::TickerInputChanged(input) => {
-                self.ticker_input = input;
-                Task::none()
-            }
-            Message::LoadData => {
-                let ticker = self.ticker_input.to_uppercase();
-                Task::perform(load_stock_data(ticker), Message::DataLoaded)
-            }
-            Message::DataLoaded(Ok(data)) => {
-                self.stock_data = data;
-                let mut chart_data = Vec::new();
-                if !self.stock_data.is_empty() {
-                    let six_months_ago = chrono::Utc::now() - chrono::Duration::days(6 * 30);
-                    chart_data = self.stock_data.iter()
-                        .filter(|d| d.timestamp >= six_months_ago)
-                        .cloned()
-                        .collect();
+// View function for the new Program API
+fn view(state: &StockScreener) -> Element<Message> {
+    let ticker_input_field = text_input("Enter Ticker (e.g., AAPL)", &state.ticker_input)
+        .on_input(Message::TickerInputChanged)
+        .on_submit(Message::LoadData)
+        .padding(10);
+
+    let price_chart_view = ChartWidget::new(&state.price_chart_state)
+        .width(Length::Fill)
+        .height(Length::FillPortion(7));
+    
+    let volume_chart_view = ChartWidget::new(&state.volume_chart_state)
+        .width(Length::Fill)
+        .height(Length::FillPortion(3));
+    
+    let content_column = column![
+        ticker_input_field,
+        price_chart_view,
+        volume_chart_view,
+    ]
+    .spacing(20)
+    .padding(20)
+    .align_x(Alignment::Center);
+
+    container(content_column)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
+        .into()
+}
+
+// Theme function for the new Program API
+fn theme(_state: &StockScreener) -> Theme {
+    Theme::custom("Dark".to_string(), theme::Palette {
+        background: Color::BLACK,
+        text: Color::from_rgb(0.7, 0.7, 0.7),
+        primary: Color::from_rgb(0.5, 0.5, 0.5),
+        success: Color::from_rgb(0.0, 1.0, 0.0),
+        danger: Color::from_rgb(1.0, 0.0, 0.0),
+    })
+}
+
+// Subscription function for the new Program API
+fn subscription(_state: &StockScreener) -> Subscription<Message> {
+    event::listen().map(|event| {
+        match event {
+            Event::Keyboard(keyboard::Event::KeyPressed {
+                key,
+                modifiers,
+                ..
+            }) => {
+                if modifiers.control() {
+                    match key.as_ref() {
+                        keyboard::Key::Character("q") | keyboard::Key::Character("w") => Message::CloseApp,
+                        _ => Message::NoOp,
+                    }
+                } else if modifiers.is_empty() {
+                    match key.as_ref() {
+                        keyboard::Key::Named(keyboard::key::Named::F11) => Message::ToggleFullscreen,
+                        _ => Message::NoOp,
+                    }
+                } else {
+                    Message::NoOp
                 }
-                self.price_chart_state.update_data(chart_data.clone());
-                self.volume_chart_state.update_data(chart_data);
-                Task::none()
             }
-            Message::DataLoaded(Err(e)) => {
-                eprintln!("Error loading data: {}", e);
-                self.stock_data.clear();
-                self.price_chart_state.update_data(Vec::new());
-                self.volume_chart_state.update_data(Vec::new());
-                Task::none()
-            }
+            _ => Message::NoOp,
         }
-    }
-
-    fn view(&self) -> Element<'_, Message, Theme, Renderer> {
-        let ticker_input_field = text_input("Enter Ticker (e.g., AAPL)", &self.ticker_input)
-            .on_input(Message::TickerInputChanged)
-            .on_submit(Message::LoadData)
-            .padding(10);
-
-        let price_chart_view = ChartWidget::new(&self.price_chart_state)
-            .width(Length::Fill)
-            .height(Length::FillPortion(7));
-        
-        let volume_chart_view = ChartWidget::new(&self.volume_chart_state)
-            .width(Length::Fill)
-            .height(Length::FillPortion(3));
-        
-        let content_column: Column<Message, Theme, Renderer> = column![
-            ticker_input_field,
-            price_chart_view,
-            volume_chart_view,
-        ]
-        .spacing(20)
-        .padding(20)
-        .align_x(Alignment::Center);
-
-        container(content_column)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Alignment::Center)
-            .align_y(Alignment::Center)
-            .into()
-    }
-
-    fn theme(&self) -> Theme {
-        self.current_theme.clone()
-    }
+    })
 }
 
 // Asynchronous function to load stock data
@@ -209,15 +260,16 @@ impl Chart<Message> for ChartState {
                 ChartType::Volume => "Volume Data Not Available",
             };
             let mut chart = chart_builder
-                .caption(caption, ("sans-serif", 20).into_font().color(&WHITE.mix(0.7)))
+                .caption(caption, ("sans-serif", 20).into_font().color(&WHITE.mix(0.2)))
                 .margin(5)
                 .set_all_label_area_size(50) 
                 .build_cartesian_2d(0f32..10f32, 0f32..10f32)
                 .expect("Failed to build chart");
             chart.configure_mesh()
-                .axis_style(&WHITE.mix(0.7))
-                .y_label_style(("sans-serif", 15).into_font().color(&WHITE.mix(0.7)))
-                .x_label_style(("sans-serif", 15).into_font().color(&WHITE.mix(0.7)))
+                .set_all_tick_mark_size(0)
+                .axis_style(WHITE.mix(0.2))
+                .y_label_style(("sans-serif", 15).into_font().color(&WHITE.mix(0.2)))
+                .x_label_style(("sans-serif", 15).into_font().color(&WHITE.mix(0.2)))
                 .draw().expect("Failed to draw mesh");
             return;
         }
@@ -237,11 +289,13 @@ impl Chart<Message> for ChartState {
                     .expect("Failed to build price chart");
 
                 price_chart_context.configure_mesh()
+                    .set_all_tick_mark_size(0)
                     .disable_x_mesh()
                     .y_labels(5)
                     .y_label_formatter(&|y| format!("${:.0}", y))
-                    .axis_style(&WHITE.mix(0.2))
+                    .axis_style(WHITE.mix(0.2))
                     .y_label_style(("sans-serif", 15).into_font().color(&WHITE.mix(0.2)))
+                    .bold_line_style(WHITE.mix(0.05).stroke_width(1))
                     .draw().expect("Failed to draw price mesh");
 
                 price_chart_context.draw_series(self.data.iter().enumerate().map(|(idx, data)| {
@@ -264,6 +318,7 @@ impl Chart<Message> for ChartState {
                     .expect("Failed to build volume chart");
 
                 volume_chart_context.configure_mesh()
+                    .set_all_tick_mark_size(0)
                     .disable_x_mesh()
                     .y_labels(3)
                     .y_label_formatter(&|v| { 
@@ -277,7 +332,7 @@ impl Chart<Message> for ChartState {
                             format!("{:.0}", *v)
                         }
                     })
-                    .axis_style(&WHITE.mix(0.2))
+                    .axis_style(WHITE.mix(0.2))
                     .y_label_style(("sans-serif", 15).into_font().color(&WHITE.mix(0.2)))
                     .draw().expect("Failed to draw volume mesh");
 
