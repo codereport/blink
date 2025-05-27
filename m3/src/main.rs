@@ -1,8 +1,7 @@
-use iced::widget::{column, container, text_input, Column};
-use iced::{Theme, Element, Error, Alignment, Color, Settings, Length, Font};
+use iced::widget::{column, container, text_input};
+use iced::{Theme, Element, Error, Alignment, Color, Length, Font};
 use iced::theme;
 use iced::{keyboard, Event, Subscription, window};
-use iced::alignment;
 use iced::event;
 use plotters::prelude::*;
 use plotters::style::Color as PlottersColor;
@@ -56,7 +55,6 @@ fn main() -> Result<(), Error> {
                 stock_data: Vec::new(),
                 price_chart_state: ChartState::new(ChartType::Price, Vec::new()),
                 volume_chart_state: ChartState::new(ChartType::Volume, Vec::new()),
-                current_theme: Theme::Dark,
                 is_fullscreen: false,
             };
             let initial_task = Task::perform(
@@ -78,7 +76,6 @@ struct StockScreener {
     stock_data: Vec<StockData>,
     price_chart_state: ChartState,
     volume_chart_state: ChartState,
-    current_theme: Theme,
     is_fullscreen: bool, // To track fullscreen state
 }
 
