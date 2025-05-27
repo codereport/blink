@@ -147,11 +147,11 @@ fn view(state: &StockScreener) -> Element<Message> {
 
     let price_chart_view = ChartWidget::new(&state.price_chart_state)
         .width(Length::Fill)
-        .height(Length::FillPortion(7));
+        .height(Length::FillPortion(8));
     
     let volume_chart_view = ChartWidget::new(&state.volume_chart_state)
         .width(Length::Fill)
-        .height(Length::FillPortion(3));
+        .height(Length::FillPortion(2));
     
     let content_column = column![
         ticker_input_field,
