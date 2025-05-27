@@ -1,6 +1,8 @@
 use iced::widget::{column, container, text_input, Column};
-use iced::{Theme, Element, Length, Settings, Task, Error, Alignment, Renderer};
+use iced::{Theme, Element, Length, Settings, Task, Error, Alignment, Renderer, Color};
+use iced::theme;
 use plotters::prelude::*;
+use plotters::style::Color as PlottersColor;
 use plotters_iced::{Chart, ChartWidget, DrawingBackend, ChartBuilder};
 use std::path::PathBuf;
 
@@ -78,7 +80,13 @@ impl StockScreener {
             stock_data: Vec::new(),
             price_chart_state: ChartState::new(ChartType::Price, Vec::new()),
             volume_chart_state: ChartState::new(ChartType::Volume, Vec::new()),
-            current_theme: Theme::Dark,
+            current_theme: Theme::custom("CustomDark".to_string(), theme::Palette {
+                background: Color::BLACK,
+                text: Color::from_rgb(0.7, 0.7, 0.7),
+                primary: Color::from_rgb(0.5, 0.5, 0.5),
+                success: Color::from_rgb(0.0, 1.0, 0.0),
+                danger: Color::from_rgb(1.0, 0.0, 0.0),
+            }),
         }
     }
 
@@ -201,18 +209,20 @@ impl Chart<Message> for ChartState {
                 ChartType::Volume => "Volume Data Not Available",
             };
             let mut chart = chart_builder
-                .caption(caption, ("sans-serif", 20).into_font())
+                .caption(caption, ("sans-serif", 20).into_font().color(&WHITE.mix(0.7)))
                 .margin(5)
                 .set_all_label_area_size(50) 
                 .build_cartesian_2d(0f32..10f32, 0f32..10f32)
                 .expect("Failed to build chart");
-            chart.configure_mesh().draw().expect("Failed to draw mesh");
+            chart.configure_mesh()
+                .axis_style(&WHITE.mix(0.7))
+                .y_label_style(("sans-serif", 15).into_font().color(&WHITE.mix(0.7)))
+                .x_label_style(("sans-serif", 15).into_font().color(&WHITE.mix(0.7)))
+                .draw().expect("Failed to draw mesh");
             return;
         }
 
-        let (min_date, max_date) = self.data.iter()
-            .map(|d| d.timestamp)
-            .fold((self.data[0].timestamp, self.data[0].timestamp), |(min, max), ts| (min.min(ts), max.max(ts)));
+        let x_range = 0.0..(self.data.len() as f64);
 
         match self.chart_type {
             ChartType::Price => {
@@ -223,18 +233,19 @@ impl Chart<Message> for ChartState {
                 let mut price_chart_context = chart_builder
                     .margin(5)
                     .set_all_label_area_size(50)
-                    .caption("Stock Price", ("sans-serif", 20).into_font())
-                    .build_cartesian_2d(min_date..max_date, min_low..max_high)
+                    .build_cartesian_2d(x_range.clone(), min_low..max_high)
                     .expect("Failed to build price chart");
 
                 price_chart_context.configure_mesh()
-                    .x_labels(5)
+                    .disable_x_mesh()
                     .y_labels(5)
-                    .y_label_formatter(&|y| format!("${:.2}", y))
+                    .y_label_formatter(&|y| format!("${:.0}", y))
+                    .axis_style(&WHITE.mix(0.2))
+                    .y_label_style(("sans-serif", 15).into_font().color(&WHITE.mix(0.2)))
                     .draw().expect("Failed to draw price mesh");
 
-                price_chart_context.draw_series(self.data.iter().map(|data| {
-                    let x = data.timestamp;
+                price_chart_context.draw_series(self.data.iter().enumerate().map(|(idx, data)| {
+                    let x = idx as f64;
                     let open = data.open;
                     let high = data.high;
                     let low = data.low;
@@ -249,31 +260,35 @@ impl Chart<Message> for ChartState {
                 let mut volume_chart_context = chart_builder
                     .margin(5)
                     .set_all_label_area_size(50)
-                    // No caption for volume chart to save space, or add a very small one
-                    .build_cartesian_2d(min_date..max_date, 0.0..max_volume)
+                    .build_cartesian_2d(x_range.clone(), 0.0..max_volume)
                     .expect("Failed to build volume chart");
 
                 volume_chart_context.configure_mesh()
-                    .x_labels(5) 
+                    .disable_x_mesh()
                     .y_labels(3)
                     .y_label_formatter(&|v| { 
                         if *v >= 1_000_000_000.0 {
-                            format!("{:.1}B", *v / 1_000_000_000.0)
+                            format!("{:.0}B", *v / 1_000_000_000.0)
                         } else if *v >= 1_000_000.0 {
-                            format!("{:.1}M", *v / 1_000_000.0)
+                            format!("{:.0}M", *v / 1_000_000.0)
                         } else if *v >= 1_000.0 {
-                            format!("{:.1}K", *v / 1_000.0)
+                            format!("{:.0}K", *v / 1_000.0)
                         } else {
                             format!("{:.0}", *v)
                         }
                     })
+                    .axis_style(&WHITE.mix(0.2))
+                    .y_label_style(("sans-serif", 15).into_font().color(&WHITE.mix(0.2)))
                     .draw().expect("Failed to draw volume mesh");
 
-                volume_chart_context.draw_series(self.data.iter().map(|data| {
-                    let x = data.timestamp;
+                volume_chart_context.draw_series(self.data.iter().enumerate().map(|(idx, data)| {
+                    let x = idx as f64;
                     let color = if data.close >= data.open { GREEN.mix(0.5) } else { RED.mix(0.5) };
-                    let bar_width_duration = chrono::Duration::hours(12);
-                    Rectangle::new([(x - bar_width_duration, 0.0), (x + bar_width_duration, data.volume)], color.filled())
+                    let bar_width = 0.8f64;
+                    Rectangle::new([
+                        (x - bar_width / 2.0, 0.0),
+                        (x + bar_width / 2.0, data.volume)
+                    ], color.filled())
                 })).expect("Failed to draw volume series");
             }
         }
