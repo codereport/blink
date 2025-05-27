@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-import yfinance as yf
-import pandas as pd
 import os
+
+import yfinance as yf
 
 
 def download_ticker_data():
