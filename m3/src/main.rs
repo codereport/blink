@@ -54,12 +54,13 @@ fn main() -> Result<(), Error> {
             let initial_state = StockScreener {
                 ticker_input: "NVDA".to_string(),
                 stock_data: Vec::new(),
-                price_chart_state: ChartState::new(ChartType::Price, Vec::new()),
-                volume_chart_state: ChartState::new(ChartType::Volume, Vec::new()),
+                price_chart_state: ChartState::new(ChartType::Price, Vec::new(), TimeWindow::SixMonths),
+                volume_chart_state: ChartState::new(ChartType::Volume, Vec::new(), TimeWindow::SixMonths),
                 is_fullscreen: false,
                 selected_data_point: None,
                 mouse_position: None,
                 last_mouse_update: None,
+                current_time_window: TimeWindow::SixMonths,
             };
             let initial_task = Task::perform(
                 load_stock_data("NVDA".to_string()),
@@ -67,6 +68,23 @@ fn main() -> Result<(), Error> {
             );
             (initial_state, initial_task)
         })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum TimeWindow {
+    SixMonths,
+    OneYear,
+    FiveYears,
+}
+
+impl TimeWindow {
+    fn to_days(&self) -> i64 {
+        match self {
+            TimeWindow::SixMonths => 6 * 30,
+            TimeWindow::OneYear => 365,
+            TimeWindow::FiveYears => 5 * 365,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -84,6 +102,7 @@ struct StockScreener {
     selected_data_point: Option<usize>,
     mouse_position: Option<Point>,
     last_mouse_update: Option<Instant>,
+    current_time_window: TimeWindow,
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +114,7 @@ enum Message {
     ToggleFullscreen,
     MouseMoved(Point),
     UpdateCrosshairs,
+    ChangeTimeWindow(TimeWindow),
     NoOp,
 }
 
@@ -113,9 +133,9 @@ fn update(state: &mut StockScreener, message: Message) -> Task<Message> {
             state.stock_data = data;
             let mut chart_data = Vec::new();
             if !state.stock_data.is_empty() {
-                let six_months_ago = chrono::Utc::now() - chrono::Duration::days(6 * 30);
+                let cutoff_date = chrono::Utc::now() - chrono::Duration::days(state.current_time_window.to_days());
                 chart_data = state.stock_data.iter()
-                    .filter(|d| d.timestamp >= six_months_ago)
+                    .filter(|d| d.timestamp >= cutoff_date)
                     .cloned()
                     .collect();
             }
@@ -201,6 +221,24 @@ fn update(state: &mut StockScreener, message: Message) -> Task<Message> {
             // This runs at ~60 FPS to provide smooth updates
             // We can use this to hide crosshairs when mouse hasn't moved for a while
             // or to smooth out any remaining jitter
+            Task::none()
+        }
+        Message::ChangeTimeWindow(window) => {
+            state.current_time_window = window;
+            // Update time window in chart states
+            state.price_chart_state.update_time_window(window);
+            state.volume_chart_state.update_time_window(window);
+            // Refresh chart data with new time window
+            if !state.stock_data.is_empty() {
+                let cutoff_date = chrono::Utc::now() - chrono::Duration::days(state.current_time_window.to_days());
+                let chart_data: Vec<StockData> = state.stock_data.iter()
+                    .filter(|d| d.timestamp >= cutoff_date)
+                    .cloned()
+                    .collect();
+                state.price_chart_state.update_data(chart_data.clone());
+                state.volume_chart_state.update_data(chart_data);
+                state.selected_data_point = None;
+            }
             Task::none()
         }
         Message::NoOp => Task::none(),
@@ -306,6 +344,9 @@ fn subscription(_state: &StockScreener) -> Subscription<Message> {
                     } else if modifiers.is_empty() {
                         match key.as_ref() {
                             keyboard::Key::Named(keyboard::key::Named::F11) => Message::ToggleFullscreen,
+                            keyboard::Key::Character("1") => Message::ChangeTimeWindow(TimeWindow::SixMonths),
+                            keyboard::Key::Character("2") => Message::ChangeTimeWindow(TimeWindow::OneYear),
+                            keyboard::Key::Character("3") => Message::ChangeTimeWindow(TimeWindow::FiveYears),
                             _ => Message::NoOp,
                         }
                     } else {
@@ -397,22 +438,28 @@ struct ChartState {
     mouse_position: Option<Point>,
     crosshair_visible: bool,
     last_crosshair_index: Option<usize>, // Track last crosshair position to reduce updates
+    time_window: TimeWindow,
 }
 
 impl ChartState {
-    fn new(chart_type: ChartType, data: Vec<StockData>) -> Self {
+    fn new(chart_type: ChartType, data: Vec<StockData>, time_window: TimeWindow) -> Self {
         Self { 
             chart_type, 
             data,
             mouse_position: None,
             crosshair_visible: false,
             last_crosshair_index: None,
+            time_window,
         }
     }
 
     fn update_data(&mut self, new_data: Vec<StockData>) {
         self.data = new_data;
         self.last_crosshair_index = None; // Reset crosshair when data changes
+    }
+    
+    fn update_time_window(&mut self, time_window: TimeWindow) {
+        self.time_window = time_window;
     }
     
     fn set_mouse_position(&mut self, position: Option<Point>) {
@@ -470,6 +517,13 @@ impl Chart<Message> for ChartState {
                     .bold_line_style(WHITE.mix(0.05).stroke_width(1))
                     .draw().expect("Failed to draw price mesh");
 
+                // Determine candlestick width based on time window
+                let candlestick_width = match self.time_window {
+                    TimeWindow::SixMonths => 10,
+                    TimeWindow::OneYear => 6,
+                    TimeWindow::FiveYears => 3,
+                };
+
                 price_chart_context.draw_series(self.data.iter().enumerate().map(|(idx, data)| {
                     let x = idx as f64;
                     let open = data.open;
@@ -477,7 +531,7 @@ impl Chart<Message> for ChartState {
                     let low = data.low;
                     let close = data.close;
                     let color = if close >= open { GREEN } else { RED };
-                    CandleStick::new(x, open, high, low, close, color.filled(), color, 10)
+                    CandleStick::new(x, open, high, low, close, color.filled(), color, candlestick_width)
                 })).expect("Failed to draw candlestick series");
 
                 // Draw technical indicators using pre-calculated values
@@ -593,10 +647,16 @@ impl Chart<Message> for ChartState {
                     .axis_style(BLACK)
                     .draw().expect("Failed to draw volume mesh");
 
+                // Determine bar width based on time window
+                let bar_width = match self.time_window {
+                    TimeWindow::SixMonths => 0.8f64,
+                    TimeWindow::OneYear => 0.6f64,
+                    TimeWindow::FiveYears => 0.4f64,
+                };
+
                 volume_chart_context.draw_series(self.data.iter().enumerate().map(|(idx, data)| {
                     let x = idx as f64;
                     let color = if data.close >= data.open { GREEN.mix(0.5) } else { RED.mix(0.5) };
-                    let bar_width = 0.8f64;
                     Rectangle::new([
                         (x - bar_width / 2.0, 0.0),
                         (x + bar_width / 2.0, data.volume)
