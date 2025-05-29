@@ -52,7 +52,7 @@ def download_ticker_data():
             if not os.path.exists(folder_name):
                 os.makedirs(folder_name)
 
-            file_name = f"{ticker_symbol}_historical_data.csv"
+            file_name = f"{ticker_symbol}.csv"
             file_path = os.path.join(folder_name, file_name)
 
             # Save the data to a CSV file
