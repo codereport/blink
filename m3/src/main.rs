@@ -1,13 +1,14 @@
-use iced::widget::{column, container, text_input};
-use iced::{Theme, Element, Error, Alignment, Color, Length, Font};
+use iced::widget::{column, container, text_input, text};
+use iced::{Theme, Element, Error, Alignment, Color, Length, Font, Point};
 use iced::theme;
-use iced::{keyboard, Event, Subscription, window};
+use iced::{keyboard, Event, Subscription, window, mouse, time};
 use iced::event;
 use plotters::prelude::*;
 use plotters::style::Color as PlottersColor;
 use plotters_iced::{Chart, ChartWidget, DrawingBackend, ChartBuilder};
 use std::path::PathBuf;
 use iced::{Task};
+use std::time::{Duration, Instant};
 
 // Custom deserialization for the timestamp
 mod custom_date_format {
@@ -56,6 +57,9 @@ fn main() -> Result<(), Error> {
                 price_chart_state: ChartState::new(ChartType::Price, Vec::new()),
                 volume_chart_state: ChartState::new(ChartType::Volume, Vec::new()),
                 is_fullscreen: false,
+                selected_data_point: None,
+                mouse_position: None,
+                last_mouse_update: None,
             };
             let initial_task = Task::perform(
                 load_stock_data("NVDA".to_string()),
@@ -76,7 +80,10 @@ struct StockScreener {
     stock_data: Vec<StockData>,
     price_chart_state: ChartState,
     volume_chart_state: ChartState,
-    is_fullscreen: bool, // To track fullscreen state
+    is_fullscreen: bool,
+    selected_data_point: Option<usize>,
+    mouse_position: Option<Point>,
+    last_mouse_update: Option<Instant>,
 }
 
 #[derive(Debug, Clone)]
@@ -84,9 +91,11 @@ enum Message {
     TickerInputChanged(String),
     LoadData,
     DataLoaded(Result<Vec<StockData>, String>),
-    CloseApp, // For Ctrl+Q/W
-    ToggleFullscreen, // For F11
-    NoOp, // New variant for unhandled events
+    CloseApp,
+    ToggleFullscreen,
+    MouseMoved(Point),
+    UpdateCrosshairs,
+    NoOp,
 }
 
 // Update function for the new Program API
@@ -112,6 +121,7 @@ fn update(state: &mut StockScreener, message: Message) -> Task<Message> {
             }
             state.price_chart_state.update_data(chart_data.clone());
             state.volume_chart_state.update_data(chart_data);
+            state.selected_data_point = None;
             Task::none()
         }
         Message::DataLoaded(Err(e)) => {
@@ -119,6 +129,7 @@ fn update(state: &mut StockScreener, message: Message) -> Task<Message> {
             state.stock_data.clear();
             state.price_chart_state.update_data(Vec::new());
             state.volume_chart_state.update_data(Vec::new());
+            state.selected_data_point = None;
             Task::none()
         }
         Message::CloseApp => {
@@ -132,6 +143,65 @@ fn update(state: &mut StockScreener, message: Message) -> Task<Message> {
                 window::Mode::Windowed
             };
             window::get_latest().and_then(move |id| window::change_mode(id, new_mode))
+        }
+        Message::MouseMoved(position) => {
+            // Handle mouse leaving the window (negative coordinates)
+            if position.x < 0.0 || position.y < 0.0 {
+                state.mouse_position = None;
+                state.price_chart_state.set_mouse_position(None);
+                state.selected_data_point = None;
+                return Task::none();
+            }
+            
+            // Increase throttle threshold to reduce jitter more aggressively
+            let should_update = if let Some(last_pos) = state.mouse_position {
+                // Only update if mouse moved more than 5 pixels
+                let distance = ((position.x - last_pos.x).powi(2) + (position.y - last_pos.y).powi(2)).sqrt();
+                distance > 5.0
+            } else {
+                true
+            };
+            
+            if should_update {
+                state.mouse_position = Some(position);
+                
+                // Update only price chart state with mouse position
+                state.price_chart_state.set_mouse_position(Some(position));
+                
+                // Simplified calculation for data point selection
+                if !state.price_chart_state.data.is_empty() {
+                    let data_count = state.price_chart_state.data.len();
+                    
+                    // Use a much simpler approach - assume chart takes most of the window width
+                    // with some padding on the sides
+                    let chart_left_margin = 60.0;
+                    let chart_right_margin = 60.0;
+                    let window_width = 1800.0;
+                    let chart_width = window_width - chart_left_margin - chart_right_margin;
+                    
+                    if position.x >= chart_left_margin && position.x <= (window_width - chart_right_margin) {
+                        let relative_x = position.x - chart_left_margin;
+                        let ratio = relative_x / chart_width;
+                        let index = (ratio * data_count as f32) as usize;
+                        let clamped_index = index.min(data_count - 1);
+                        
+                        // Only update if the index actually changed
+                        if state.selected_data_point != Some(clamped_index) {
+                            state.selected_data_point = Some(clamped_index);
+                        }
+                    } else {
+                        state.selected_data_point = None;
+                    }
+                }
+                state.last_mouse_update = Some(Instant::now());
+            }
+            Task::none()
+        }
+        Message::UpdateCrosshairs => {
+            // This runs at ~60 FPS to provide smooth updates
+            // We can use this to hide crosshairs when mouse hasn't moved for a while
+            // or to smooth out any remaining jitter
+            Task::none()
         }
         Message::NoOp => Task::none(),
     }
@@ -153,10 +223,43 @@ fn view(state: &StockScreener) -> Element<Message> {
         .width(Length::Fill)
         .height(Length::FillPortion(2));
     
+    let status_bar = if let Some(index) = state.selected_data_point {
+        if let Some(data_point) = state.price_chart_state.data.get(index) {
+            let daily_change = if index > 0 {
+                if let Some(prev_data) = state.price_chart_state.data.get(index - 1) {
+                    ((data_point.close - prev_data.close) / prev_data.close) * 100.0
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            };
+            
+            let date_str = data_point.timestamp.format("%Y-%m-%d").to_string();
+            let status_text = format!(
+                "Date: {:>10} | Daily % Gain/Loss: {:>8.2}% | Volume: {:>12.0} | Open: {:>8.2} | High: {:>8.2} | Low: {:>8.2} | Close: {:>8.2}",
+                date_str, daily_change, data_point.volume, data_point.open, data_point.high, data_point.low, data_point.close
+            );
+            
+            text(status_text)
+                .size(14)
+                .font(Font::with_name("JetBrains Mono"))
+        } else {
+            text("Date:            | Daily % Gain/Loss:         % | Volume:              | Open:         | High:         | Low:          | Close:        ")
+                .size(14)
+                .font(Font::with_name("JetBrains Mono"))
+        }
+    } else {
+        text("Date:            | Daily % Gain/Loss:         % | Volume:              | Open:         | High:         | Low:          | Close:        ")
+            .size(14)
+            .font(Font::with_name("JetBrains Mono"))
+    };
+    
     let content_column = column![
         ticker_input_field,
         price_chart_view,
         volume_chart_view,
+        status_bar,
     ]
     .spacing(20)
     .padding(20)
@@ -183,30 +286,43 @@ fn theme(_state: &StockScreener) -> Theme {
 
 // Subscription function for the new Program API
 fn subscription(_state: &StockScreener) -> Subscription<Message> {
-    event::listen().map(|event| {
-        match event {
-            Event::Keyboard(keyboard::Event::KeyPressed {
-                key,
-                modifiers,
-                ..
-            }) => {
-                if modifiers.control() {
-                    match key.as_ref() {
-                        keyboard::Key::Character("q") | keyboard::Key::Character("w") => Message::CloseApp,
-                        _ => Message::NoOp,
+    Subscription::batch([
+        // Reduced timer frequency to reduce rendering load
+        time::every(Duration::from_millis(50)).map(|_| Message::UpdateCrosshairs), // ~20 FPS instead of 60
+        
+        // Event listener for keyboard and mouse
+        event::listen().map(|event| {
+            match event {
+                Event::Keyboard(keyboard::Event::KeyPressed {
+                    key,
+                    modifiers,
+                    ..
+                }) => {
+                    if modifiers.control() {
+                        match key.as_ref() {
+                            keyboard::Key::Character("q") | keyboard::Key::Character("w") => Message::CloseApp,
+                            _ => Message::NoOp,
+                        }
+                    } else if modifiers.is_empty() {
+                        match key.as_ref() {
+                            keyboard::Key::Named(keyboard::key::Named::F11) => Message::ToggleFullscreen,
+                            _ => Message::NoOp,
+                        }
+                    } else {
+                        Message::NoOp
                     }
-                } else if modifiers.is_empty() {
-                    match key.as_ref() {
-                        keyboard::Key::Named(keyboard::key::Named::F11) => Message::ToggleFullscreen,
-                        _ => Message::NoOp,
-                    }
-                } else {
-                    Message::NoOp
                 }
+                Event::Mouse(mouse::Event::CursorMoved { position }) => {
+                    Message::MouseMoved(position)
+                }
+                Event::Mouse(mouse::Event::CursorLeft) => {
+                    // Hide crosshairs when mouse leaves the window
+                    Message::MouseMoved(Point::new(-1.0, -1.0)) // Use invalid coordinates to hide
+                }
+                _ => Message::NoOp,
             }
-            _ => Message::NoOp,
-        }
-    })
+        })
+    ])
 }
 
 // Asynchronous function to load stock data
@@ -236,15 +352,30 @@ async fn load_stock_data(ticker: String) -> Result<Vec<StockData>, String> {
 struct ChartState {
     chart_type: ChartType,
     data: Vec<StockData>,
+    mouse_position: Option<Point>,
+    crosshair_visible: bool,
+    last_crosshair_index: Option<usize>, // Track last crosshair position to reduce updates
 }
 
 impl ChartState {
     fn new(chart_type: ChartType, data: Vec<StockData>) -> Self {
-        Self { chart_type, data }
+        Self { 
+            chart_type, 
+            data,
+            mouse_position: None,
+            crosshair_visible: false,
+            last_crosshair_index: None,
+        }
     }
 
     fn update_data(&mut self, new_data: Vec<StockData>) {
         self.data = new_data;
+        self.last_crosshair_index = None; // Reset crosshair when data changes
+    }
+    
+    fn set_mouse_position(&mut self, position: Option<Point>) {
+        self.mouse_position = position;
+        self.crosshair_visible = position.is_some();
     }
 }
 
@@ -293,6 +424,46 @@ impl Chart<Message> for ChartState {
                     let color = if close >= open { GREEN } else { RED };
                     CandleStick::new(x, open, high, low, close, color.filled(), color, 10)
                 })).expect("Failed to draw candlestick series");
+
+                // Draw crosshairs if mouse is over the chart
+                if self.crosshair_visible {
+                    if let Some(mouse_pos) = self.mouse_position {
+                        if self.data.len() > 0 {
+                            let data_count = self.data.len();
+                            
+                            // Use the exact same calculation as in mouse tracking
+                            let chart_left_margin = 60.0;
+                            let chart_right_margin = 60.0;
+                            let window_width = 1800.0;
+                            let chart_width = window_width - chart_left_margin - chart_right_margin;
+                            
+                            if mouse_pos.x >= chart_left_margin && mouse_pos.x <= (window_width - chart_right_margin) {
+                                let relative_x = mouse_pos.x - chart_left_margin;
+                                let ratio = relative_x / chart_width;
+                                let data_index = (ratio * data_count as f32) as usize;
+                                let data_index = data_index.min(data_count - 1);
+                                
+                                let x_pos = data_index as f64;
+                                let data_point = &self.data[data_index];
+                                
+                                // Draw vertical crosshair line with semi-transparent white
+                                price_chart_context.draw_series(std::iter::once(
+                                    PathElement::new(vec![(x_pos, min_low), (x_pos, max_high)], WHITE.mix(0.6).stroke_width(1))
+                                )).expect("Failed to draw vertical crosshair");
+                                
+                                // Draw horizontal crosshair line at close price
+                                price_chart_context.draw_series(std::iter::once(
+                                    PathElement::new(vec![(0.0, data_point.close), (self.data.len() as f64, data_point.close)], WHITE.mix(0.6).stroke_width(1))
+                                )).expect("Failed to draw horizontal crosshair");
+                                
+                                // Draw a small circle at the intersection point
+                                price_chart_context.draw_series(std::iter::once(
+                                    Circle::new((x_pos, data_point.close), 2, WHITE.filled())
+                                )).expect("Failed to draw crosshair intersection");
+                            }
+                        }
+                    }
+                }
             }
             ChartType::Volume => {
                 let max_volume = self.data.iter().map(|d| d.volume).fold(0.0, f64::max);
@@ -317,6 +488,8 @@ impl Chart<Message> for ChartState {
                         (x + bar_width / 2.0, data.volume)
                     ], color.filled())
                 })).expect("Failed to draw volume series");
+
+                // No crosshairs for volume chart - keeps it cleaner
             }
         }
     }
