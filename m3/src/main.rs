@@ -349,6 +349,48 @@ async fn load_stock_data(ticker: String) -> Result<Vec<StockData>, String> {
     Ok(data)
 }
 
+// Technical indicator calculation functions
+fn calculate_sma(data: &[StockData], period: usize) -> Vec<Option<f64>> {
+    let mut sma_values = Vec::with_capacity(data.len());
+    
+    for i in 0..data.len() {
+        if i + 1 < period {
+            sma_values.push(None);
+        } else {
+            let sum: f64 = data[i + 1 - period..=i].iter().map(|d| d.close).sum();
+            sma_values.push(Some(sum / period as f64));
+        }
+    }
+    
+    sma_values
+}
+
+fn calculate_bollinger_bands(data: &[StockData], period: usize, std_dev: f64) -> Vec<Option<(f64, f64, f64)>> {
+    let mut bb_values = Vec::with_capacity(data.len());
+    
+    for i in 0..data.len() {
+        if i + 1 < period {
+            bb_values.push(None);
+        } else {
+            let window = &data[i + 1 - period..=i];
+            let sum: f64 = window.iter().map(|d| d.close).sum();
+            let mean = sum / period as f64;
+            
+            let variance: f64 = window.iter()
+                .map(|d| (d.close - mean).powi(2))
+                .sum::<f64>() / period as f64;
+            let std_deviation = variance.sqrt();
+            
+            let upper_band = mean + (std_deviation * std_dev);
+            let lower_band = mean - (std_deviation * std_dev);
+            
+            bb_values.push(Some((upper_band, mean, lower_band)));
+        }
+    }
+    
+    bb_values
+}
+
 struct ChartState {
     chart_type: ChartType,
     data: Vec<StockData>,
@@ -403,9 +445,22 @@ impl Chart<Message> for ChartState {
                     .map(|d| (d.low, d.high))
                     .fold((self.data[0].low, self.data[0].high), |(min_l, max_h), (l, h)| (min_l.min(l), max_h.max(h)));
 
+                // Calculate technical indicators once
+                let sma_10 = calculate_sma(&self.data, 10);
+                let sma_20 = calculate_sma(&self.data, 20);
+                let sma_50 = calculate_sma(&self.data, 50);
+                let bollinger_bands = calculate_bollinger_bands(&self.data, 20, 2.0);
+                
+                // Include Bollinger Bands in range calculation
+                let (bb_min, bb_max) = bollinger_bands.iter()
+                    .filter_map(|&bb| bb)
+                    .fold((min_low, max_high), |(min_val, max_val), (upper, _, lower)| {
+                        (min_val.min(lower), max_val.max(upper))
+                    });
+
                 let mut price_chart_context = chart_builder
                     .margin(5)
-                    .build_cartesian_2d(x_range.clone(), min_low..max_high)
+                    .build_cartesian_2d(x_range.clone(), bb_min..bb_max)
                     .expect("Failed to build price chart");
 
                 price_chart_context.configure_mesh()
@@ -424,6 +479,65 @@ impl Chart<Message> for ChartState {
                     let color = if close >= open { GREEN } else { RED };
                     CandleStick::new(x, open, high, low, close, color.filled(), color, 10)
                 })).expect("Failed to draw candlestick series");
+
+                // Draw technical indicators using pre-calculated values
+                // Draw SMA 10 (white)
+                let sma_10_points: Vec<(f64, f64)> = sma_10.iter().enumerate()
+                    .filter_map(|(i, &value)| value.map(|v| (i as f64, v)))
+                    .collect();
+                if !sma_10_points.is_empty() {
+                    price_chart_context.draw_series(LineSeries::new(
+                        sma_10_points,
+                        WHITE.mix(0.25).stroke_width(1) // 50% transparent white
+                    )).expect("Failed to draw SMA 10");
+                }
+
+                // Draw SMA 20 (pink)
+                let sma_20_points: Vec<(f64, f64)> = sma_20.iter().enumerate()
+                    .filter_map(|(i, &value)| value.map(|v| (i as f64, v)))
+                    .collect();
+                if !sma_20_points.is_empty() {
+                    price_chart_context.draw_series(LineSeries::new(
+                        sma_20_points,
+                        RGBColor(255, 0, 255).mix(0.25).stroke_width(1) // 50% transparent hot pink
+                    )).expect("Failed to draw SMA 20");
+                }
+
+                // Draw SMA 50 (purple)
+                let sma_50_points: Vec<(f64, f64)> = sma_50.iter().enumerate()
+                    .filter_map(|(i, &value)| value.map(|v| (i as f64, v)))
+                    .collect();
+                if !sma_50_points.is_empty() {
+                    price_chart_context.draw_series(LineSeries::new(
+                        sma_50_points,
+                        RGBColor(138, 43, 226).mix(0.25).stroke_width(1) // 50% transparent medium slate blue (purple)
+                    )).expect("Failed to draw SMA 50");
+                }
+
+                // Draw Bollinger Bands (yellow)
+                let bb_upper_points: Vec<(f64, f64)> = bollinger_bands.iter().enumerate()
+                    .filter_map(|(i, &value)| value.map(|(upper, _, _)| (i as f64, upper)))
+                    .collect();
+                let bb_lower_points: Vec<(f64, f64)> = bollinger_bands.iter().enumerate()
+                    .filter_map(|(i, &value)| value.map(|(_, _, lower)| (i as f64, lower)))
+                    .collect();
+                    
+                if !bb_upper_points.is_empty() {
+                    price_chart_context.draw_series(DashedLineSeries::new(
+                        bb_upper_points,
+                        5, // dash length
+                        5, // gap length
+                        YELLOW.mix(0.25).stroke_width(1)
+                    )).expect("Failed to draw Bollinger upper band");
+                }
+                if !bb_lower_points.is_empty() {
+                    price_chart_context.draw_series(DashedLineSeries::new(
+                        bb_lower_points,
+                        5, // dash length
+                        5, // gap length
+                        YELLOW.mix(0.25).stroke_width(1)
+                    )).expect("Failed to draw Bollinger lower band");
+                }
 
                 // Draw crosshairs if mouse is over the chart
                 if self.crosshair_visible {
@@ -448,7 +562,7 @@ impl Chart<Message> for ChartState {
                                 
                                 // Draw vertical crosshair line with semi-transparent white
                                 price_chart_context.draw_series(std::iter::once(
-                                    PathElement::new(vec![(x_pos, min_low), (x_pos, max_high)], WHITE.mix(0.6).stroke_width(1))
+                                    PathElement::new(vec![(x_pos, bb_min), (x_pos, bb_max)], WHITE.mix(0.6).stroke_width(1))
                                 )).expect("Failed to draw vertical crosshair");
                                 
                                 // Draw horizontal crosshair line at close price
