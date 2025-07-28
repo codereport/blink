@@ -3,11 +3,13 @@ class StockApp {
     constructor() {
         this.stockData = [];
         this.filteredData = [];
+        this.tradingDaysData = [];
         this.currentTicker = 'NVDA';
         this.currentTimeWindow = '6m';
         this.priceChart = null;
         this.volumeChart = null;
         this.selectedDataPoint = null;
+        this.selectedTradingDayIndex = null;
         this.mousePosition = null;
         this.crosshairOverlays = {};
 
@@ -96,9 +98,11 @@ class StockApp {
 
     updateCharts() {
         this.filteredData = filterDataByTimeWindow(this.stockData, this.currentTimeWindow);
+        this.tradingDaysData = [];  // Reset trading days data, will be set in createVolumeChart
         this.createPriceChart();
         this.createVolumeChart();
         this.selectedDataPoint = null;
+        this.selectedTradingDayIndex = null;
         this.updateStatusBar();
     }
 
@@ -124,17 +128,25 @@ class StockApp {
         try {
             const canvas = document.getElementById('price-chart');
 
-            // Calculate technical indicators for the candlestick chart
-            const indicators = prepareIndicatorDatasets(this.filteredData);
+            // Use trading days data for alignment with volume chart
+            const tradingDaysData = this.filteredData.filter(d => d.volume > 0);
 
-            this.simpleCandlesticks = new SimpleCandlestickChart(canvas, this.filteredData);
+            // Calculate technical indicators for the candlestick chart
+            const indicators = prepareIndicatorDatasets(tradingDaysData);
+
+            this.simpleCandlesticks = new SimpleCandlestickChart(canvas, tradingDaysData);
             this.simpleCandlesticks.draw(indicators);
 
             // Setup mouse events with proper callbacks
             this.simpleCandlesticks.setupMouseEvents(
                 (dataIndex, mouseX, mouseY) => {
-                    // Update selected data point and status bar
-                    this.selectedDataPoint = dataIndex;
+                    // dataIndex is now the trading day index since we filtered the data
+                    this.selectedTradingDayIndex = dataIndex;
+
+                    // Find corresponding index in full filtered data for status bar
+                    const tradingDay = tradingDaysData[dataIndex];
+                    this.selectedDataPoint = this.filteredData.findIndex(d => d.timestamp === tradingDay.timestamp);
+
                     this.updateStatusBar();
                     // Draw crosshair on volume chart
                     this.drawVolumeChartCrosshair();
@@ -142,6 +154,7 @@ class StockApp {
                 () => {
                     // Clear selection on mouse leave
                     this.selectedDataPoint = null;
+                    this.selectedTradingDayIndex = null;
                     this.updateStatusBar();
                     this.clearVolumeChartCrosshair();
                 }
@@ -157,27 +170,30 @@ class StockApp {
         // Fallback to Chart.js with line charts
         console.log('Falling back to Chart.js line charts');
 
-        // Prepare close price line data as fallback
-        const closeData = this.filteredData.map(d => ({
-            x: d.timestamp,
+        // Use trading days data for alignment with volume chart
+        const tradingDaysData = this.filteredData.filter(d => d.volume > 0);
+
+        // Prepare close price line data as fallback - use index for x to match volume chart
+        const closeData = tradingDaysData.map((d, index) => ({
+            x: index,
             y: d.close
         }));
 
         // Prepare high/low data for better visualization
-        const highData = this.filteredData.map(d => ({
-            x: d.timestamp,
+        const highData = tradingDaysData.map((d, index) => ({
+            x: index,
             y: d.high
         }));
 
-        const lowData = this.filteredData.map(d => ({
-            x: d.timestamp,
+        const lowData = tradingDaysData.map((d, index) => ({
+            x: index,
             y: d.low
         }));
 
         console.log('Sample data:', closeData[0]);
 
         // Calculate technical indicators
-        const indicators = prepareIndicatorDatasets(this.filteredData);
+        const indicators = prepareIndicatorDatasets(tradingDaysData);
 
         const datasets = [
             // High-Low range visualization
@@ -285,79 +301,74 @@ class StockApp {
     }
 
     createVolumeChart() {
-        const ctx = document.getElementById('volume-chart').getContext('2d');
-
-        if (this.volumeChart) {
-            this.volumeChart.destroy();
-        }
+        const canvas = document.getElementById('volume-chart');
 
         if (this.filteredData.length === 0) {
-            this.volumeChart = new Chart(ctx, {
-                type: 'bar',
-                data: { datasets: [] },
-                options: this.getEmptyChartOptions()
-            });
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
             return;
         }
 
-        console.log('Creating volume chart with', this.filteredData.length, 'data points');
+        // Filter out days with zero volume (weekends/holidays)
+        this.tradingDaysData = this.filteredData.filter(d => d.volume > 0);
 
-        const volumeData = this.filteredData.map(d => ({
-            x: d.timestamp,
-            y: d.volume
-        }));
+        console.log('Creating volume chart with', this.tradingDaysData.length, 'trading days (filtered from', this.filteredData.length, 'total days)');
 
-        const volumeColors = this.filteredData.map(d =>
-            d.close >= d.open ? 'rgba(0, 255, 0, 0.6)' : 'rgba(255, 0, 0, 0.6)'
-        );
+        if (this.tradingDaysData.length === 0) {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            return;
+        }
 
-        console.log('Sample volume data:', volumeData[0]);
-        console.log('Max volume:', Math.max(...this.filteredData.map(d => d.volume)));
+        // Create custom volume chart using same approach as SimpleCandlestickChart
+        try {
+            this.simpleVolumeChart = new SimpleVolumeChart(canvas, this.tradingDaysData);
+            this.simpleVolumeChart.draw();
 
-        this.volumeChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                datasets: [{
-                    label: 'Volume',
-                    data: volumeData,
-                    backgroundColor: volumeColors,
-                    borderColor: volumeColors,
-                    borderWidth: 0,
-                    maxBarThickness: 8
-                }]
-            },
-            options: this.getVolumeChartOptions()
-        });
+            console.log('Simple volume chart created successfully');
 
-        console.log('Volume chart created successfully');
+            // Create crosshair overlay for volume chart
+            this.createCrosshairOverlay('volume-chart');
 
-        // Create crosshair overlay for volume chart
-        this.createCrosshairOverlay('volume-chart');
+            // Add mouse move event for crosshairs
+            canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e, 'volume'));
+            canvas.addEventListener('mouseleave', () => this.handleMouseLeave());
 
-        // Add mouse move event for crosshairs
-        ctx.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e, 'volume'));
-        ctx.canvas.addEventListener('mouseleave', () => this.handleMouseLeave());
+        } catch (error) {
+            console.error('Simple volume chart failed:', error);
+            // Fallback to empty chart
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
     }
 
     handleMouseMove(event, chartType) {
-        if (!this.filteredData.length) return;
+        if (!this.tradingDaysData.length) return;
 
         const rect = event.target.getBoundingClientRect();
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
 
         // Get the appropriate chart based on chartType
-        const chart = chartType === 'price' ? this.priceChart : this.volumeChart;
-        if (!chart) return;
+        const chart = chartType === 'price' ?
+            (this.simpleCandlesticks || this.priceChart) :
+            this.simpleVolumeChart;
 
-        // Calculate data point index based on mouse position
+        if (!chart || !chart.chartArea) return;
+
         const chartArea = chart.chartArea;
         if (x >= chartArea.left && x <= chartArea.right) {
-            const dataIndex = Math.round((x - chartArea.left) / (chartArea.right - chartArea.left) * (this.filteredData.length - 1));
-            const clampedIndex = Math.max(0, Math.min(dataIndex, this.filteredData.length - 1));
+            // Both charts now use the same trading days data with same indices
+            const dataIndex = Math.round((x - chartArea.left) / (chartArea.right - chartArea.left) * Math.max(0, this.tradingDaysData.length - 1));
+            const selectedTradingDayIndex = Math.max(0, Math.min(dataIndex, this.tradingDaysData.length - 1));
 
-            if (this.selectedDataPoint !== clampedIndex) {
-                this.selectedDataPoint = clampedIndex;
+            // Find the corresponding index in the full filtered data for status bar
+            const tradingDay = this.tradingDaysData[selectedTradingDayIndex];
+            const selectedIndex = this.filteredData.findIndex(d => d.timestamp === tradingDay.timestamp);
+
+            if (this.selectedDataPoint !== selectedIndex) {
+                this.selectedDataPoint = selectedIndex;
+                this.selectedTradingDayIndex = selectedTradingDayIndex;
                 this.updateStatusBar();
                 this.drawCrosshairs();
             }
@@ -366,6 +377,7 @@ class StockApp {
 
     handleMouseLeave() {
         this.selectedDataPoint = null;
+        this.selectedTradingDayIndex = null;
         this.updateStatusBar();
 
         // Clear crosshair overlays
@@ -381,20 +393,14 @@ class StockApp {
         if (this.priceChart) {
             this.priceChart.update('none');
         }
-        if (this.volumeChart) {
-            this.volumeChart.update('none');
-        }
     }
 
     drawCrosshairs() {
         if (this.selectedDataPoint === null) return;
 
-        // Update both charts to show crosshairs
+        // Update price chart to show crosshairs
         if (this.priceChart) {
             this.priceChart.update('none');
-        }
-        if (this.volumeChart) {
-            this.volumeChart.update('none');
         }
 
         // Draw crosshair lines on both charts
@@ -434,21 +440,19 @@ class StockApp {
     }
 
     drawVolumeChartCrosshair() {
-        if (this.selectedDataPoint === null || !this.filteredData.length || !this.volumeChart) return;
+        if (this.selectedTradingDayIndex === undefined || !this.simpleVolumeChart || !this.tradingDaysData.length) return;
 
         const overlay = this.crosshairOverlays['volume-chart'];
         if (!overlay) return;
 
         const ctx = overlay.getContext('2d');
-        const volumeChartArea = this.volumeChart.chartArea;
+        const volumeChartArea = this.simpleVolumeChart.chartArea;
 
         // Clear previous crosshair
         ctx.clearRect(0, 0, overlay.width, overlay.height);
 
-        // Calculate x position based on data index
-        const xPosition = volumeChartArea.left +
-            (this.selectedDataPoint / (this.filteredData.length - 1)) *
-            (volumeChartArea.right - volumeChartArea.left);
+        // Calculate x position using the same method as SimpleVolumeChart
+        const xPosition = this.simpleVolumeChart.xPosition(this.selectedTradingDayIndex);
 
         ctx.save();
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
@@ -473,7 +477,7 @@ class StockApp {
     }
 
     drawCrosshairLines() {
-        if (this.selectedDataPoint === null || !this.filteredData.length) return;
+        if (this.selectedTradingDayIndex === null || !this.tradingDaysData.length) return;
 
         // For Chart.js fallback mode, draw crosshairs on overlays
         if (this.priceChart && this.crosshairOverlays['price-chart']) {
@@ -484,9 +488,9 @@ class StockApp {
             // Clear previous crosshair
             ctx.clearRect(0, 0, overlay.width, overlay.height);
 
-            // Calculate x position based on data index
+            // Calculate x position based on trading day index (both charts use same indices now)
             const xPosition = priceChartArea.left +
-                (this.selectedDataPoint / (this.filteredData.length - 1)) *
+                (this.selectedTradingDayIndex / Math.max(1, this.tradingDaysData.length - 1)) *
                 (priceChartArea.right - priceChartArea.left);
 
             ctx.save();
@@ -522,10 +526,13 @@ class StockApp {
 
             const date = new Date(dataPoint.timestamp).toISOString().split('T')[0];
 
+            // Show volume as "No Trading" if it's zero (weekend/holiday)
+            const volumeDisplay = dataPoint.volume === 0 ? 'No Trading'.padStart(12) : this.formatVolumeNumber(dataPoint.volume).padStart(12);
+
             statusText.textContent =
                 `Date: ${date.padEnd(10)} | ` +
                 `Daily % Gain/Loss: ${dailyChange.toFixed(2).padStart(8)}% | ` +
-                `Volume: ${dataPoint.volume.toLocaleString().padStart(12)} | ` +
+                `Volume: ${volumeDisplay} | ` +
                 `Open: ${dataPoint.open.toFixed(2).padStart(8)} | ` +
                 `High: ${dataPoint.high.toFixed(2).padStart(8)} | ` +
                 `Low: ${dataPoint.low.toFixed(2).padStart(8)} | ` +
@@ -549,8 +556,10 @@ class StockApp {
         let minPrice = Infinity;
         let maxPrice = -Infinity;
 
-        if (this.filteredData.length > 0) {
-            this.filteredData.forEach(d => {
+        const tradingDaysData = this.filteredData.filter(d => d.volume > 0);
+
+        if (tradingDaysData.length > 0) {
+            tradingDaysData.forEach(d => {
                 minPrice = Math.min(minPrice, d.low);
                 maxPrice = Math.max(maxPrice, d.high);
             });
@@ -564,25 +573,37 @@ class StockApp {
         return {
             responsive: true,
             maintainAspectRatio: false,
+            layout: {
+                padding: {
+                    left: 60,   // Match SimpleCandlestickChart padding
+                    right: 20,
+                    top: 20,
+                    bottom: 60
+                }
+            },
             interaction: {
                 intersect: false,
                 mode: 'index'
             },
             scales: {
                 x: {
-                    type: 'time',
-                    time: {
-                        displayFormats: {
-                            day: 'MMM dd',
-                            month: 'MMM yyyy'
-                        }
-                    },
+                    type: 'linear',
+                    min: 0,
+                    max: Math.max(0, tradingDaysData.length - 1),
                     grid: {
                         display: false
                     },
                     ticks: {
                         color: '#666666',
-                        maxTicksLimit: 10
+                        maxTicksLimit: 8,
+                        callback: (value) => {
+                            // Convert index back to date for display
+                            if (tradingDaysData && tradingDaysData[Math.floor(value)]) {
+                                const date = new Date(tradingDaysData[Math.floor(value)].timestamp);
+                                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                            }
+                            return '';
+                        }
                     }
                 },
                 y: {
@@ -616,19 +637,37 @@ class StockApp {
         return {
             responsive: true,
             maintainAspectRatio: false,
+            layout: {
+                padding: {
+                    left: 60,   // Match SimpleCandlestickChart padding
+                    right: 20,
+                    top: 20,
+                    bottom: 60
+                }
+            },
             interaction: {
                 intersect: false,
                 mode: 'index'
             },
             scales: {
                 x: {
-                    type: 'time',
+                    type: 'linear',
+                    min: 0,
+                    max: Math.max(0, this.tradingDaysData.length - 1),
                     grid: {
                         display: false
                     },
                     ticks: {
                         color: '#666666',
-                        maxTicksLimit: 10
+                        maxTicksLimit: 8,
+                        callback: (value) => {
+                            // Convert index back to date for display
+                            if (this.tradingDaysData && this.tradingDaysData[Math.floor(value)]) {
+                                const date = new Date(this.tradingDaysData[Math.floor(value)].timestamp);
+                                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                            }
+                            return '';
+                        }
                     }
                 },
                 y: {
@@ -636,7 +675,10 @@ class StockApp {
                         color: 'rgba(255, 255, 255, 0.05)'
                     },
                     ticks: {
-                        color: '#666666'
+                        color: '#666666',
+                        callback: (value) => {
+                            return this.formatVolumeNumber(value);
+                        }
                     }
                 }
             },
@@ -649,6 +691,22 @@ class StockApp {
                 }
             }
         };
+    }
+
+    formatVolumeNumber(value) {
+        if (value === 0) return '0';
+
+        const absValue = Math.abs(value);
+
+        if (absValue >= 1e9) {
+            return (value / 1e9).toFixed(1) + 'B';
+        } else if (absValue >= 1e6) {
+            return (value / 1e6).toFixed(1) + 'M';
+        } else if (absValue >= 1e3) {
+            return (value / 1e3).toFixed(1) + 'K';
+        } else {
+            return value.toString();
+        }
     }
 
     getEmptyChartOptions() {
@@ -670,6 +728,143 @@ class StockApp {
                 tooltip: { enabled: false }
             }
         };
+    }
+}
+
+// Simple Volume Chart class that matches SimpleCandlestickChart positioning
+class SimpleVolumeChart {
+    constructor(canvas, data, options = {}) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.data = data;
+        this.options = {
+            padding: { top: 20, bottom: 60, left: 60, right: 20 }, // Match SimpleCandlestickChart
+            barWidth: 8, // Match candleWidth
+            colors: {
+                up: 'rgba(0, 255, 0, 0.6)',
+                down: 'rgba(255, 0, 0, 0.6)',
+                grid: 'rgba(255, 255, 255, 0.1)',
+                text: '#666666'
+            },
+            ...options
+        };
+
+        this.setupCanvas();
+        this.calculateDimensions();
+    }
+
+    setupCanvas() {
+        const rect = this.canvas.getBoundingClientRect();
+        this.canvas.width = rect.width * window.devicePixelRatio;
+        this.canvas.height = rect.height * window.devicePixelRatio;
+        this.ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        this.canvas.style.width = rect.width + 'px';
+        this.canvas.style.height = rect.height + 'px';
+    }
+
+    calculateDimensions() {
+        const rect = this.canvas.getBoundingClientRect();
+        this.chartArea = {
+            left: this.options.padding.left,
+            top: this.options.padding.top,
+            right: rect.width - this.options.padding.right,
+            bottom: rect.height - this.options.padding.bottom
+        };
+
+        this.chartArea.width = this.chartArea.right - this.chartArea.left;
+        this.chartArea.height = this.chartArea.bottom - this.chartArea.top;
+    }
+
+    getMinMaxVolume() {
+        let min = 0;
+        let max = Math.max(...this.data.map(d => d.volume));
+
+        // Add 5% padding to max
+        max = max * 1.05;
+        return { min, max };
+    }
+
+    xPosition(index) {
+        // Use same spacing calculation as SimpleCandlestickChart
+        const spacing = this.chartArea.width / (this.data.length - 1);
+        return this.chartArea.left + (index * spacing);
+    }
+
+    yPosition(volume, min, max) {
+        const ratio = (volume - min) / (max - min);
+        return this.chartArea.bottom - (ratio * this.chartArea.height);
+    }
+
+    formatVolumeNumber(value) {
+        if (value === 0) return '0';
+
+        const absValue = Math.abs(value);
+
+        if (absValue >= 1e9) {
+            return (value / 1e9).toFixed(1) + 'B';
+        } else if (absValue >= 1e6) {
+            return (value / 1e6).toFixed(1) + 'M';
+        } else if (absValue >= 1e3) {
+            return (value / 1e3).toFixed(1) + 'K';
+        } else {
+            return value.toString();
+        }
+    }
+
+    drawGrid(min, max) {
+        this.ctx.strokeStyle = this.options.colors.grid;
+        this.ctx.lineWidth = 1;
+
+        // Horizontal grid lines
+        const steps = 4;
+        for (let i = 0; i <= steps; i++) {
+            const volume = min + ((max - min) * i / steps);
+            const y = this.yPosition(volume, min, max);
+
+            this.ctx.beginPath();
+            this.ctx.moveTo(this.chartArea.left, y);
+            this.ctx.lineTo(this.chartArea.right, y);
+            this.ctx.stroke();
+
+            // Volume labels
+            this.ctx.fillStyle = this.options.colors.text;
+            this.ctx.font = '12px monospace';
+            this.ctx.textAlign = 'right';
+            this.ctx.fillText(this.formatVolumeNumber(volume), this.chartArea.left - 10, y + 4);
+        }
+    }
+
+    drawVolumeBar(index, volume) {
+        const isGreen = this.data[index].close >= this.data[index].open;
+        const color = isGreen ? this.options.colors.up : this.options.colors.down;
+        const { min, max } = this.getMinMaxVolume();
+
+        const x = this.xPosition(index);
+        const barBottom = this.yPosition(0, min, max);
+        const barTop = this.yPosition(volume, min, max);
+        const barHeight = barBottom - barTop;
+
+        this.ctx.fillStyle = color;
+        this.ctx.fillRect(x - this.options.barWidth / 2, barTop, this.options.barWidth, barHeight);
+    }
+
+    draw() {
+        // Clear canvas
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        if (this.data.length === 0) return;
+
+        const { min, max } = this.getMinMaxVolume();
+
+        // Draw grid
+        this.drawGrid(min, max);
+
+        // Draw volume bars
+        this.data.forEach((d, index) => {
+            this.drawVolumeBar(index, d.volume);
+        });
+
+        console.log(`Drew ${this.data.length} volume bars`);
     }
 }
 
