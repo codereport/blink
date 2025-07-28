@@ -9,6 +9,7 @@ class StockApp {
         this.volumeChart = null;
         this.selectedDataPoint = null;
         this.mousePosition = null;
+        this.crosshairOverlays = {};
 
         this.init();
     }
@@ -26,11 +27,13 @@ class StockApp {
         tickerInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 this.loadData(tickerInput.value);
+                tickerInput.blur();
             }
         });
 
         loadButton.addEventListener('click', () => {
             this.loadData(tickerInput.value);
+            tickerInput.blur();
         });
 
         // Time window buttons
@@ -133,11 +136,14 @@ class StockApp {
                     // Update selected data point and status bar
                     this.selectedDataPoint = dataIndex;
                     this.updateStatusBar();
+                    // Draw crosshair on volume chart
+                    this.drawVolumeChartCrosshair();
                 },
                 () => {
                     // Clear selection on mouse leave
                     this.selectedDataPoint = null;
                     this.updateStatusBar();
+                    this.clearVolumeChartCrosshair();
                 }
             );
 
@@ -270,6 +276,9 @@ class StockApp {
 
         console.log('Chart created successfully');
 
+        // Create crosshair overlay for price chart (Chart.js fallback mode)
+        this.createCrosshairOverlay('price-chart');
+
         // Add mouse move event for crosshairs
         ctx.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e, 'price'));
         ctx.canvas.addEventListener('mouseleave', () => this.handleMouseLeave());
@@ -321,17 +330,28 @@ class StockApp {
         });
 
         console.log('Volume chart created successfully');
+
+        // Create crosshair overlay for volume chart
+        this.createCrosshairOverlay('volume-chart');
+
+        // Add mouse move event for crosshairs
+        ctx.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e, 'volume'));
+        ctx.canvas.addEventListener('mouseleave', () => this.handleMouseLeave());
     }
 
     handleMouseMove(event, chartType) {
-        if (chartType !== 'price' || !this.filteredData.length) return;
+        if (!this.filteredData.length) return;
 
         const rect = event.target.getBoundingClientRect();
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
 
+        // Get the appropriate chart based on chartType
+        const chart = chartType === 'price' ? this.priceChart : this.volumeChart;
+        if (!chart) return;
+
         // Calculate data point index based on mouse position
-        const chartArea = this.priceChart.chartArea;
+        const chartArea = chart.chartArea;
         if (x >= chartArea.left && x <= chartArea.right) {
             const dataIndex = Math.round((x - chartArea.left) / (chartArea.right - chartArea.left) * (this.filteredData.length - 1));
             const clampedIndex = Math.max(0, Math.min(dataIndex, this.filteredData.length - 1));
@@ -347,17 +367,144 @@ class StockApp {
     handleMouseLeave() {
         this.selectedDataPoint = null;
         this.updateStatusBar();
+
+        // Clear crosshair overlays
+        this.clearVolumeChartCrosshair();
+
+        // Clear price chart crosshair overlay if using Chart.js fallback
+        const priceOverlay = this.crosshairOverlays['price-chart'];
+        if (priceOverlay) {
+            const ctx = priceOverlay.getContext('2d');
+            ctx.clearRect(0, 0, priceOverlay.width, priceOverlay.height);
+        }
+
         if (this.priceChart) {
             this.priceChart.update('none');
+        }
+        if (this.volumeChart) {
+            this.volumeChart.update('none');
         }
     }
 
     drawCrosshairs() {
-        if (!this.priceChart || this.selectedDataPoint === null) return;
+        if (this.selectedDataPoint === null) return;
 
-        // This is a simplified crosshair implementation
-        // For a more advanced implementation, you would need to use Chart.js plugins
-        this.priceChart.update('none');
+        // Update both charts to show crosshairs
+        if (this.priceChart) {
+            this.priceChart.update('none');
+        }
+        if (this.volumeChart) {
+            this.volumeChart.update('none');
+        }
+
+        // Draw crosshair lines on both charts
+        this.drawCrosshairLines();
+    }
+
+    createCrosshairOverlay(chartId) {
+        const chartCanvas = document.getElementById(chartId);
+        const container = chartCanvas.parentElement;
+
+        // Remove existing overlay if present
+        const existingOverlay = container.querySelector('.crosshair-overlay');
+        if (existingOverlay) {
+            existingOverlay.remove();
+        }
+
+        // Create overlay canvas
+        const overlay = document.createElement('canvas');
+        overlay.className = 'crosshair-overlay';
+        overlay.style.position = 'absolute';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.pointerEvents = 'none';
+        overlay.style.zIndex = '10';
+
+        // Match the size of the chart canvas
+        const rect = chartCanvas.getBoundingClientRect();
+        overlay.width = rect.width;
+        overlay.height = rect.height;
+        overlay.style.width = rect.width + 'px';
+        overlay.style.height = rect.height + 'px';
+
+        container.style.position = 'relative';
+        container.appendChild(overlay);
+
+        this.crosshairOverlays[chartId] = overlay;
+    }
+
+    drawVolumeChartCrosshair() {
+        if (this.selectedDataPoint === null || !this.filteredData.length || !this.volumeChart) return;
+
+        const overlay = this.crosshairOverlays['volume-chart'];
+        if (!overlay) return;
+
+        const ctx = overlay.getContext('2d');
+        const volumeChartArea = this.volumeChart.chartArea;
+
+        // Clear previous crosshair
+        ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+        // Calculate x position based on data index
+        const xPosition = volumeChartArea.left +
+            (this.selectedDataPoint / (this.filteredData.length - 1)) *
+            (volumeChartArea.right - volumeChartArea.left);
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+
+        // Vertical line
+        ctx.beginPath();
+        ctx.moveTo(xPosition, volumeChartArea.top);
+        ctx.lineTo(xPosition, volumeChartArea.bottom);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    clearVolumeChartCrosshair() {
+        const overlay = this.crosshairOverlays['volume-chart'];
+        if (!overlay) return;
+
+        const ctx = overlay.getContext('2d');
+        ctx.clearRect(0, 0, overlay.width, overlay.height);
+    }
+
+    drawCrosshairLines() {
+        if (this.selectedDataPoint === null || !this.filteredData.length) return;
+
+        // For Chart.js fallback mode, draw crosshairs on overlays
+        if (this.priceChart && this.crosshairOverlays['price-chart']) {
+            const overlay = this.crosshairOverlays['price-chart'];
+            const ctx = overlay.getContext('2d');
+            const priceChartArea = this.priceChart.chartArea;
+
+            // Clear previous crosshair
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+            // Calculate x position based on data index
+            const xPosition = priceChartArea.left +
+                (this.selectedDataPoint / (this.filteredData.length - 1)) *
+                (priceChartArea.right - priceChartArea.left);
+
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([2, 2]);
+
+            // Vertical line
+            ctx.beginPath();
+            ctx.moveTo(xPosition, priceChartArea.top);
+            ctx.lineTo(xPosition, priceChartArea.bottom);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        // Draw crosshair on volume chart
+        this.drawVolumeChartCrosshair();
     }
 
     updateStatusBar(errorMessage = null) {

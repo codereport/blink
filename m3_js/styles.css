@@ -120,6 +120,15 @@ body {
     /* Minimum height for volume chart */
 }
 
+/* Crosshair overlay styling */
+.crosshair-overlay {
+    pointer-events: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 10;
+}
+
 #price-chart,
 #volume-chart {
     width: 100% !important;
@@ -135,6 +144,7 @@ body {
     font-family: 'JetBrains Mono', monospace;
     white-space: nowrap;
     overflow: hidden;
+    text-align: center;
 }
 
 .controls-info {
