@@ -1,0 +1,27 @@
+{
+    "name": "m3-javascript",
+    "version": "1.0.0",
+    "description": "JavaScript port of the m3 Technical Stock tracing program",
+    "main": "server.js",
+    "scripts": {
+        "start": "node server.js",
+        "dev": "nodemon server.js"
+    },
+    "dependencies": {
+        "express": "^4.18.2",
+        "csv-parser": "^3.0.0",
+        "path": "^0.12.7",
+        "fs": "^0.0.1-security"
+    },
+    "devDependencies": {
+        "nodemon": "^3.0.1"
+    },
+    "keywords": [
+        "stocks",
+        "technical-analysis",
+        "charts",
+        "finance"
+    ],
+    "author": "Generated from Rust m3 program",
+    "license": "MIT"
+}

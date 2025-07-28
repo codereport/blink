@@ -1,1 +1,5 @@
 m3/target/
+
+# Node.js for m3_js
+m3_js/node_modules/
+m3_js/package-lock.json

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M3 Technical Stock Analysis</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="input-section">
+                <input type="text" id="ticker-input" placeholder="Enter Ticker (e.g., AAPL)" value="NVDA">
+                <button id="load-button">Load Data</button>
+            </div>
+            <div class="time-window-controls">
+                <button id="btn-6m" class="time-btn active" data-window="6m">6 Months (1)</button>
+                <button id="btn-1y" class="time-btn" data-window="1y">1 Year (2)</button>
+                <button id="btn-5y" class="time-btn" data-window="5y">5 Years (3)</button>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <div class="price-chart-wrapper">
+                <canvas id="price-chart"></canvas>
+            </div>
+            <div class="volume-chart-wrapper">
+                <canvas id="volume-chart"></canvas>
+            </div>
+        </div>
+
+        <div class="status-bar">
+            <span id="status-text">Date: | Daily % Gain/Loss: % | Volume: | Open: | High: | Low: | Close: </span>
+        </div>
+
+        <div class="controls-info">
+            <p>Controls: F11 - Fullscreen | 1,2,3 - Time Windows | Ctrl+Q/W - Exit | Mouse - Crosshairs</p>
+        </div>
+    </div>
+
+    <script src="technical-indicators.js"></script>
+    <script src="simple-candlestick.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>

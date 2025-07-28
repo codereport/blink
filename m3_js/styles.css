@@ -1,0 +1,175 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background-color: #000000;
+    color: #b3b3b3;
+    font-family: 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
+    overflow: hidden;
+}
+
+.container {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.input-section {
+    display: flex;
+    gap: 10px;
+}
+
+#ticker-input {
+    padding: 10px;
+    background-color: #1a1a1a;
+    border: 1px solid #4a4a4a;
+    color: #b3b3b3;
+    font-family: inherit;
+    font-size: 14px;
+    border-radius: 4px;
+    min-width: 200px;
+}
+
+#ticker-input:focus {
+    outline: none;
+    border-color: #007acc;
+}
+
+#load-button {
+    padding: 10px 20px;
+    background-color: #007acc;
+    border: none;
+    color: white;
+    font-family: inherit;
+    font-size: 14px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+#load-button:hover {
+    background-color: #005a9e;
+}
+
+.time-window-controls {
+    display: flex;
+    gap: 10px;
+}
+
+.time-btn {
+    padding: 8px 16px;
+    background-color: #2a2a2a;
+    border: 1px solid #4a4a4a;
+    color: #b3b3b3;
+    font-family: inherit;
+    font-size: 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.time-btn:hover {
+    background-color: #3a3a3a;
+}
+
+.time-btn.active {
+    background-color: #007acc;
+    border-color: #007acc;
+    color: white;
+}
+
+.chart-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+    /* Important for flex child to shrink */
+}
+
+.price-chart-wrapper {
+    flex: 7;
+    /* Reduced from 8 to give more space to volume */
+    position: relative;
+    background-color: #0a0a0a;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    min-height: 400px;
+    /* Minimum height */
+}
+
+.volume-chart-wrapper {
+    flex: 3;
+    /* Increased from 2 to make it more visible */
+    position: relative;
+    background-color: #0a0a0a;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    min-height: 150px;
+    /* Minimum height for volume chart */
+}
+
+#price-chart,
+#volume-chart {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.status-bar {
+    padding: 10px;
+    background-color: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.controls-info {
+    margin-top: 10px;
+    text-align: center;
+    font-size: 12px;
+    color: #666;
+}
+
+.loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #007acc;
+    font-size: 16px;
+}
+
+/* Crosshair cursor when hovering over charts */
+.chart-container canvas {
+    cursor: crosshair;
+}
+
+/* Responsive design */
+@media (max-width: 1200px) {
+    .header {
+        flex-direction: column;
+        gap: 15px;
+        align-items: stretch;
+    }
+
+    .time-window-controls {
+        justify-content: center;
+    }
+}
