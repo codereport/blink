@@ -26,12 +26,27 @@
             </div>
         </div>
 
-        <div class="chart-container">
-            <div class="price-chart-wrapper">
-                <canvas id="price-chart"></canvas>
+        <div class="main-content">
+            <div class="chart-container">
+                <div class="price-chart-wrapper">
+                    <canvas id="price-chart"></canvas>
+                </div>
+                <div class="volume-chart-wrapper">
+                    <canvas id="volume-chart"></canvas>
+                </div>
             </div>
-            <div class="volume-chart-wrapper">
-                <canvas id="volume-chart"></canvas>
+
+            <div class="ticker-sidebar">
+                <div class="ticker-list-header">Stocks</div>
+                <div class="ticker-list">
+                    <div class="ticker-item active" data-ticker="NVDA">NVDA</div>
+                    <div class="ticker-item" data-ticker="AAPL">AAPL</div>
+                    <div class="ticker-item" data-ticker="AMZN">AMZN</div>
+                    <div class="ticker-item" data-ticker="GOOG">GOOG</div>
+                    <div class="ticker-item" data-ticker="META">META</div>
+                    <div class="ticker-item" data-ticker="MSFT">MSFT</div>
+                    <div class="ticker-item" data-ticker="TSLA">TSLA</div>
+                </div>
             </div>
         </div>
 
@@ -42,7 +57,7 @@
         <div class="controls-info">
             <p>Controls: F11 - Fullscreen | 1,2,3,4 - Time Windows | Spacebar - New Ticker | Ctrl+Q/W - Exit |
                 Ctrl+Enter
-                - Update Data | Mouse - Crosshairs</p>
+                - Update Data | Mouse - Crosshairs | ↑↓ - Navigate Tickers</p>
         </div>
     </div>
 

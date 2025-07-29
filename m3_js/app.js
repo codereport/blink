@@ -19,6 +19,10 @@ class StockApp {
         this.crosshairOverlays = {};
         this.isUpdating = false;
 
+        // Available tickers (NVDA first as requested, then alphabetical)
+        this.availableTickers = ['NVDA', 'AAPL', 'AMZN', 'GOOG', 'META', 'MSFT', 'TSLA'];
+        this.currentTickerIndex = 0; // NVDA is at index 0
+
         // Performance optimization: cache technical indicators
         this.cachedIndicators = null;
         this.cachedTradingDaysData = null;
@@ -36,6 +40,7 @@ class StockApp {
 
     init() {
         this.setupEventListeners();
+        this.updateTickerSelection(); // Initialize ticker selection UI
         this.loadData(this.currentTicker);
         this.checkDataStatus(this.currentTicker);
     }
@@ -69,6 +74,14 @@ class StockApp {
             });
         });
 
+        // Ticker list click handlers
+        document.querySelectorAll('.ticker-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const ticker = item.dataset.ticker;
+                this.selectTicker(ticker);
+            });
+        });
+
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.ctrlKey && (e.key === 'q' || e.key === 'w')) {
@@ -88,6 +101,14 @@ class StockApp {
             } else if (e.key >= '1' && e.key <= '4') {
                 const windows = ['3m', '6m', '1y', '5y'];
                 this.changeTimeWindow(windows[parseInt(e.key) - 1]);
+            } else if (e.key === 'ArrowUp' && e.target !== tickerInput) {
+                // Navigate up in ticker list
+                e.preventDefault();
+                this.navigateTickers(-1);
+            } else if (e.key === 'ArrowDown' && e.target !== tickerInput) {
+                // Navigate down in ticker list
+                e.preventDefault();
+                this.navigateTickers(1);
             }
         });
     }
@@ -97,6 +118,9 @@ class StockApp {
 
         this.currentTicker = ticker.toUpperCase();
         document.getElementById('ticker-input').value = this.currentTicker;
+
+        // Update ticker selection in sidebar
+        this.updateTickerSelection();
 
         // Check data status when loading new ticker
         this.checkDataStatus(this.currentTicker);
@@ -121,6 +145,42 @@ class StockApp {
             this.updateCharts();
             this.updateStatusBar('Error loading data: ' + error.message);
         }
+    }
+
+    selectTicker(ticker) {
+        // Update current ticker index
+        const tickerIndex = this.availableTickers.indexOf(ticker.toUpperCase());
+        if (tickerIndex !== -1) {
+            this.currentTickerIndex = tickerIndex;
+        }
+
+        // Load the ticker data
+        this.loadData(ticker);
+    }
+
+    navigateTickers(direction) {
+        // Calculate new index with wrapping
+        this.currentTickerIndex = (this.currentTickerIndex + direction + this.availableTickers.length) % this.availableTickers.length;
+
+        // Select the new ticker
+        const newTicker = this.availableTickers[this.currentTickerIndex];
+        this.selectTicker(newTicker);
+    }
+
+    updateTickerSelection() {
+        // Update the ticker index if current ticker changed externally
+        const tickerIndex = this.availableTickers.indexOf(this.currentTicker);
+        if (tickerIndex !== -1) {
+            this.currentTickerIndex = tickerIndex;
+        }
+
+        // Update UI to show current selection
+        document.querySelectorAll('.ticker-item').forEach(item => {
+            item.classList.remove('active');
+            if (item.dataset.ticker === this.currentTicker) {
+                item.classList.add('active');
+            }
+        });
     }
 
     changeTimeWindow(timeWindow) {
