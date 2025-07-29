@@ -85,8 +85,8 @@ class StockApp {
                 e.preventDefault();
                 tickerInput.value = '';
                 tickerInput.focus();
-            } else if (e.key >= '1' && e.key <= '3') {
-                const windows = ['6m', '1y', '5y'];
+            } else if (e.key >= '1' && e.key <= '4') {
+                const windows = ['3m', '6m', '1y', '5y'];
                 this.changeTimeWindow(windows[parseInt(e.key) - 1]);
             }
         });
@@ -1096,7 +1096,7 @@ class SimpleVolumeChart {
         this.data = data;
         this.options = {
             padding: { top: 20, bottom: 20, left: 60, right: 20 }, // Reduced bottom padding from 60 to 20
-            barWidth: 8, // Match candleWidth
+            barWidth: 8, // Will be calculated based on data
             colors: {
                 up: 'rgba(0, 255, 0, 0.6)',
                 down: 'rgba(255, 0, 0, 0.6)',
@@ -1108,6 +1108,7 @@ class SimpleVolumeChart {
 
         this.setupCanvas();
         this.calculateDimensions();
+        this.calculateBarWidth();
     }
 
     setupCanvas() {
@@ -1130,6 +1131,32 @@ class SimpleVolumeChart {
 
         this.chartArea.width = this.chartArea.right - this.chartArea.left;
         this.chartArea.height = this.chartArea.bottom - this.chartArea.top;
+    }
+
+    calculateBarWidth() {
+        if (this.data.length <= 1) {
+            this.options.barWidth = 8;
+            return;
+        }
+
+        // Calculate spacing between bars (same as candlesticks)
+        const spacing = this.chartArea.width / (this.data.length - 1);
+
+        // Make bar width proportional to spacing, with time-period aware scaling
+        // For 3m (~65 trading days): use much thicker bars
+        // For 6m+ (~130+ trading days): use 0.7 multiplier
+        let calculatedWidth;
+        if (this.data.length < 100) {
+            // For short periods (3m), make them much thicker
+            calculatedWidth = Math.max(6, Math.min(12, spacing * 1.2));
+            console.log(`Volume 3-month period detected: ${this.data.length} data points, width: ${calculatedWidth}`);
+        } else {
+            calculatedWidth = Math.max(0.5, Math.min(8, spacing * 0.7));
+            console.log(`Volume longer period: ${this.data.length} data points, width: ${calculatedWidth}`);
+        }
+
+        // Round to nearest 0.5 for crisp rendering
+        this.options.barWidth = Math.round(calculatedWidth * 2) / 2;
     }
 
     getMinMaxVolume() {
@@ -1229,6 +1256,7 @@ class SimpleVolumeChart {
         // Recalculate dimensions in case container size changed
         this.setupCanvas();
         this.calculateDimensions();
+        this.calculateBarWidth();
         this.draw();
     }
 }

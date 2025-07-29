@@ -8,7 +8,7 @@ class SimpleCandlestickChart {
         this.data = data;
         this.options = {
             padding: { top: 20, bottom: 60, left: 60, right: 20 },
-            candleWidth: 8,
+            candleWidth: 8, // Will be calculated based on data
             colors: {
                 up: '#00ff00',
                 down: '#ff0000',
@@ -20,6 +20,7 @@ class SimpleCandlestickChart {
 
         this.setupCanvas();
         this.calculateDimensions();
+        this.calculateCandleWidth();
     }
 
     setupCanvas() {
@@ -43,6 +44,34 @@ class SimpleCandlestickChart {
 
         this.chartArea.width = this.chartArea.right - this.chartArea.left;
         this.chartArea.height = this.chartArea.bottom - this.chartArea.top;
+    }
+
+    calculateCandleWidth() {
+        if (this.data.length <= 1) {
+            this.options.candleWidth = 8;
+            return;
+        }
+
+        // Calculate spacing between candles
+        const spacing = this.chartArea.width / (this.data.length - 1);
+
+        // Make candle width proportional to spacing, with time-period aware scaling
+        // For 3m (~65 trading days): use much thicker candles
+        // For 6m (~130 trading days): use 0.7 multiplier (original good size)
+        // For 1y (~250 trading days): use 0.7 multiplier
+        // For 5y (~1250 trading days): use 0.7 multiplier (thin as needed)
+        let calculatedWidth;
+        if (this.data.length < 100) {
+            // For short periods (3m), make them much thicker
+            calculatedWidth = Math.max(6, Math.min(12, spacing * 1.2));
+            console.log(`3-month period detected: ${this.data.length} data points, width: ${calculatedWidth}`);
+        } else {
+            calculatedWidth = Math.max(0.5, Math.min(8, spacing * 0.7));
+            console.log(`Longer period: ${this.data.length} data points, width: ${calculatedWidth}`);
+        }
+
+        // Round to nearest 0.5 for crisp rendering
+        this.options.candleWidth = Math.round(calculatedWidth * 2) / 2;
     }
 
     getMinMax() {
@@ -294,6 +323,7 @@ class SimpleCandlestickChart {
         // Recalculate dimensions in case container size changed
         this.setupCanvas();
         this.calculateDimensions();
+        this.calculateCandleWidth();
         this.draw(indicators);
     }
 } 

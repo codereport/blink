@@ -115,7 +115,7 @@ function calculateDailyChange(data) {
 /**
  * Filter data by time window
  * @param {Array} data - Array of stock data objects
- * @param {string} timeWindow - Time window ('6m', '1y', '5y')
+ * @param {string} timeWindow - Time window ('3m', '6m', '1y', '5y')
  * @returns {Array} Filtered data array
  */
 function filterDataByTimeWindow(data, timeWindow) {
@@ -125,6 +125,9 @@ function filterDataByTimeWindow(data, timeWindow) {
     let cutoffDate;
 
     switch (timeWindow) {
+        case '3m':
+            cutoffDate = new Date(now.getTime() - (3 * 30 * 24 * 60 * 60 * 1000)); // 3 months
+            break;
         case '6m':
             cutoffDate = new Date(now.getTime() - (6 * 30 * 24 * 60 * 60 * 1000)); // 6 months
             break;
