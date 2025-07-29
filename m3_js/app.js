@@ -63,6 +63,11 @@ class StockApp {
             } else if (e.key === 'F11') {
                 e.preventDefault();
                 this.toggleFullscreen();
+            } else if (e.key === ' ' && e.target !== tickerInput) {
+                // Spacebar - focus ticker input and clear it (only if not already focused)
+                e.preventDefault();
+                tickerInput.value = '';
+                tickerInput.focus();
             } else if (e.key >= '1' && e.key <= '3') {
                 const windows = ['6m', '1y', '5y'];
                 this.changeTimeWindow(windows[parseInt(e.key) - 1]);
