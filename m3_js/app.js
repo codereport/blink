@@ -19,9 +19,9 @@ class StockApp {
         this.crosshairOverlays = {};
         this.isUpdating = false;
 
-        // Available tickers (NVDA first as requested, then alphabetical)
-        this.availableTickers = ['NVDA', 'AAPL', 'AMZN', 'GOOG', 'META', 'MSFT', 'TSLA'];
-        this.currentTickerIndex = 0; // NVDA is at index 0
+        // Available tickers will be loaded dynamically
+        this.availableTickers = [];
+        this.currentTickerIndex = 0;
 
         // Performance optimization: cache technical indicators
         this.cachedIndicators = null;
@@ -38,8 +38,9 @@ class StockApp {
         this.init();
     }
 
-    init() {
+    async init() {
         this.setupEventListeners();
+        await this.loadAvailableTickers(); // Load tickers dynamically first
         this.updateTickerSelection(); // Initialize ticker selection UI
         this.loadData(this.currentTicker);
         this.checkDataStatus(this.currentTicker);
@@ -71,14 +72,6 @@ class StockApp {
         document.querySelectorAll('.time-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 this.changeTimeWindow(btn.dataset.window);
-            });
-        });
-
-        // Ticker list click handlers
-        document.querySelectorAll('.ticker-item').forEach(item => {
-            item.addEventListener('click', () => {
-                const ticker = item.dataset.ticker;
-                this.selectTicker(ticker);
             });
         });
 
@@ -165,6 +158,53 @@ class StockApp {
         // Select the new ticker
         const newTicker = this.availableTickers[this.currentTickerIndex];
         this.selectTicker(newTicker);
+    }
+
+    async loadAvailableTickers() {
+        try {
+            const response = await fetch('/api/tickers');
+            if (!response.ok) {
+                throw new Error('Failed to load ticker list');
+            }
+
+            this.availableTickers = await response.json();
+            console.log('Loaded available tickers:', this.availableTickers);
+
+            // Set NVDA as default if available, otherwise use first ticker
+            if (this.availableTickers.length > 0) {
+                this.currentTicker = this.availableTickers.includes('NVDA') ? 'NVDA' : this.availableTickers[0];
+                this.currentTickerIndex = this.availableTickers.indexOf(this.currentTicker);
+                document.getElementById('ticker-input').value = this.currentTicker;
+            }
+
+            // Generate ticker list HTML
+            this.generateTickerList();
+
+        } catch (error) {
+            console.error('Error loading available tickers:', error);
+            // Fallback to hardcoded list if API fails
+            this.availableTickers = ['NVDA', 'AAPL', 'AMZN', 'GOOG', 'META', 'MSFT', 'TSLA'];
+            this.generateTickerList();
+        }
+    }
+
+    generateTickerList() {
+        const tickerListContainer = document.querySelector('.ticker-list');
+        tickerListContainer.innerHTML = '';
+
+        this.availableTickers.forEach(ticker => {
+            const tickerItem = document.createElement('div');
+            tickerItem.className = 'ticker-item';
+            tickerItem.dataset.ticker = ticker;
+            tickerItem.textContent = ticker;
+
+            // Add click handler
+            tickerItem.addEventListener('click', () => {
+                this.selectTicker(ticker);
+            });
+
+            tickerListContainer.appendChild(tickerItem);
+        });
     }
 
     updateTickerSelection() {

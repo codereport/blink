@@ -41,6 +41,31 @@ function isDataUpToDate(filePath) {
     }
 }
 
+// API endpoint to get available tickers
+app.get('/api/tickers', (req, res) => {
+    const historicalDataPath = path.join(__dirname, '..', 'historical_data');
+
+    try {
+        const files = fs.readdirSync(historicalDataPath);
+        const tickers = files
+            .filter(file => file.endsWith('.csv'))
+            .map(file => file.replace('.csv', ''))
+            .sort(); // Sort alphabetically first
+
+        // Move NVDA to the front if it exists
+        const nvdaIndex = tickers.indexOf('NVDA');
+        if (nvdaIndex > -1) {
+            tickers.splice(nvdaIndex, 1);
+            tickers.unshift('NVDA');
+        }
+
+        res.json(tickers);
+    } catch (error) {
+        console.error('Error reading historical data directory:', error);
+        res.status(500).json({ error: 'Failed to read ticker list' });
+    }
+});
+
 // API endpoint to get stock data
 app.get('/api/stock/:ticker', (req, res) => {
     const ticker = req.params.ticker.toUpperCase();
