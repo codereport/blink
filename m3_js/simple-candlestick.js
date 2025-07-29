@@ -291,6 +291,9 @@ class SimpleCandlestickChart {
 
     updateData(newData, indicators = null) {
         this.data = newData;
+        // Recalculate dimensions in case container size changed
+        this.setupCanvas();
+        this.calculateDimensions();
         this.draw(indicators);
     }
 } 

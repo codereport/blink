@@ -620,12 +620,16 @@ class StockApp {
         overlay.style.pointerEvents = 'none';
         overlay.style.zIndex = '10';
 
-        // Match the size of the chart canvas
+        // Match the size and scaling of the chart canvas
         const rect = chartCanvas.getBoundingClientRect();
-        overlay.width = rect.width;
-        overlay.height = rect.height;
+        overlay.width = rect.width * window.devicePixelRatio;
+        overlay.height = rect.height * window.devicePixelRatio;
         overlay.style.width = rect.width + 'px';
         overlay.style.height = rect.height + 'px';
+
+        // Scale the overlay context to match the main canvas
+        const overlayCtx = overlay.getContext('2d');
+        overlayCtx.scale(window.devicePixelRatio, window.devicePixelRatio);
 
         container.style.position = 'relative';
         container.appendChild(overlay);
@@ -1222,6 +1226,9 @@ class SimpleVolumeChart {
 
     updateData(newData) {
         this.data = newData;
+        // Recalculate dimensions in case container size changed
+        this.setupCanvas();
+        this.calculateDimensions();
         this.draw();
     }
 }
