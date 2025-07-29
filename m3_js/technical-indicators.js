@@ -1,7 +1,7 @@
 // Technical indicator calculation functions
 
 /**
- * Calculate Simple Moving Average (SMA)
+ * Calculate Simple Moving Average (SMA) - Optimized version
  * @param {Array} data - Array of stock data objects
  * @param {number} period - Period for SMA calculation
  * @returns {Array} Array of SMA values (null for periods with insufficient data)
@@ -9,11 +9,22 @@
 function calculateSMA(data, period) {
     const smaValues = [];
 
+    if (data.length === 0) return smaValues;
+
+    let sum = 0;
+
     for (let i = 0; i < data.length; i++) {
-        if (i + 1 < period) {
+        if (i < period - 1) {
+            // Not enough data points yet
+            sum += data[i].close;
             smaValues.push(null);
+        } else if (i === period - 1) {
+            // First SMA calculation
+            sum += data[i].close;
+            smaValues.push(sum / period);
         } else {
-            const sum = data.slice(i + 1 - period, i + 1).reduce((acc, d) => acc + d.close, 0);
+            // Sliding window: remove oldest, add newest
+            sum = sum - data[i - period].close + data[i].close;
             smaValues.push(sum / period);
         }
     }
@@ -22,7 +33,7 @@ function calculateSMA(data, period) {
 }
 
 /**
- * Calculate Bollinger Bands
+ * Calculate Bollinger Bands - Optimized version
  * @param {Array} data - Array of stock data objects
  * @param {number} period - Period for calculation (typically 20)
  * @param {number} stdDev - Number of standard deviations (typically 2)
@@ -31,24 +42,47 @@ function calculateSMA(data, period) {
 function calculateBollingerBands(data, period, stdDev = 2) {
     const bbValues = [];
 
+    if (data.length === 0) return bbValues;
+
+    let sum = 0;
+    let sumSquares = 0;
+
     for (let i = 0; i < data.length; i++) {
-        if (i + 1 < period) {
+        const price = data[i].close;
+
+        if (i < period - 1) {
+            // Not enough data points yet
+            sum += price;
+            sumSquares += price * price;
             bbValues.push(null);
-        } else {
-            const window = data.slice(i + 1 - period, i + 1);
-            const sum = window.reduce((acc, d) => acc + d.close, 0);
+        } else if (i === period - 1) {
+            // First calculation
+            sum += price;
+            sumSquares += price * price;
+
             const mean = sum / period;
-
-            const variance = window.reduce((acc, d) => acc + Math.pow(d.close - mean, 2), 0) / period;
-            const standardDeviation = Math.sqrt(variance);
-
-            const upperBand = mean + (standardDeviation * stdDev);
-            const lowerBand = mean - (standardDeviation * stdDev);
+            const variance = (sumSquares / period) - (mean * mean);
+            const standardDeviation = Math.sqrt(Math.max(0, variance)); // Ensure non-negative
 
             bbValues.push({
-                upper: upperBand,
+                upper: mean + (standardDeviation * stdDev),
                 middle: mean,
-                lower: lowerBand
+                lower: mean - (standardDeviation * stdDev)
+            });
+        } else {
+            // Sliding window calculation
+            const oldPrice = data[i - period].close;
+            sum = sum - oldPrice + price;
+            sumSquares = sumSquares - (oldPrice * oldPrice) + (price * price);
+
+            const mean = sum / period;
+            const variance = (sumSquares / period) - (mean * mean);
+            const standardDeviation = Math.sqrt(Math.max(0, variance)); // Ensure non-negative
+
+            bbValues.push({
+                upper: mean + (standardDeviation * stdDev),
+                middle: mean,
+                lower: mean - (standardDeviation * stdDev)
             });
         }
     }

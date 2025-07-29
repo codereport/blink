@@ -194,7 +194,18 @@ class SimpleCandlestickChart {
     }
 
     setupMouseEvents(onMouseMove, onMouseLeave) {
-        this.canvas.addEventListener('mousemove', (e) => {
+        // Remove existing event listeners to prevent duplicates
+        this.removeMouseEvents();
+
+        // Throttle mouse moves for better performance  
+        let lastMouseMoveTime = 0;
+        const mouseMoveThrottle = 16; // ~60fps
+
+        this.mouseMoveHandler = (e) => {
+            const now = Date.now();
+            if (now - lastMouseMoveTime < mouseMoveThrottle) return;
+            lastMouseMoveTime = now;
+
             const rect = this.canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
@@ -208,7 +219,7 @@ class SimpleCandlestickChart {
                 const dataIndex = Math.round((relativeX / this.chartArea.width) * (this.data.length - 1));
                 const clampedIndex = Math.max(0, Math.min(dataIndex, this.data.length - 1));
 
-                // Store crosshair info
+                // Store crosshair info for external overlay drawing
                 this.crosshairInfo = {
                     dataIndex: clampedIndex,
                     mouseX: x,
@@ -219,62 +230,34 @@ class SimpleCandlestickChart {
                     onMouseMove(clampedIndex, x, y);
                 }
 
-                // Redraw chart with crosshairs
-                this.draw(this.lastIndicators);
+                // Don't redraw the entire chart - let external overlay handle crosshairs
             }
-        });
+        };
 
-        this.canvas.addEventListener('mouseleave', () => {
+        this.mouseLeaveHandler = () => {
             // Clear crosshair info
             this.crosshairInfo = null;
 
             if (onMouseLeave) {
                 onMouseLeave();
             }
-            // Redraw without crosshairs
-            this.draw(this.lastIndicators);
-        });
+            // Don't redraw the entire chart - let external overlay handle crosshairs
+        };
+
+        this.canvas.addEventListener('mousemove', this.mouseMoveHandler);
+        this.canvas.addEventListener('mouseleave', this.mouseLeaveHandler);
     }
 
-    drawCrosshairs() {
-        if (!this.crosshairInfo) return;
-
-        const { dataIndex } = this.crosshairInfo;
-
-        if (dataIndex < 0 || dataIndex >= this.data.length) return;
-
-        const dataPoint = this.data[dataIndex];
-        const { min, max } = this.getMinMax();
-        const x = this.xPosition(dataIndex);
-        const closeY = this.yPosition(dataPoint.close, min, max);
-
-        // Save current state
-        this.ctx.save();
-
-        // Draw vertical crosshair
-        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-        this.ctx.lineWidth = 1;
-        this.ctx.setLineDash([2, 2]);
-        this.ctx.beginPath();
-        this.ctx.moveTo(x, this.chartArea.top);
-        this.ctx.lineTo(x, this.chartArea.bottom);
-        this.ctx.stroke();
-
-        // Draw horizontal crosshair at close price
-        this.ctx.beginPath();
-        this.ctx.moveTo(this.chartArea.left, closeY);
-        this.ctx.lineTo(this.chartArea.right, closeY);
-        this.ctx.stroke();
-
-        // Draw intersection point
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-        this.ctx.beginPath();
-        this.ctx.arc(x, closeY, 3, 0, 2 * Math.PI);
-        this.ctx.fill();
-
-        // Restore state
-        this.ctx.restore();
+    removeMouseEvents() {
+        if (this.mouseMoveHandler) {
+            this.canvas.removeEventListener('mousemove', this.mouseMoveHandler);
+        }
+        if (this.mouseLeaveHandler) {
+            this.canvas.removeEventListener('mouseleave', this.mouseLeaveHandler);
+        }
     }
+
+
 
     draw(indicators = null) {
         // Store indicators for redrawing
@@ -301,8 +284,7 @@ class SimpleCandlestickChart {
             this.drawCandlestick(x, d.open, d.high, d.low, d.close);
         });
 
-        // Draw crosshairs last (on top of everything)
-        this.drawCrosshairs();
+        // Crosshairs are now drawn on external overlays for better performance
 
         console.log(`Drew ${this.data.length} candlesticks with technical indicators`);
     }

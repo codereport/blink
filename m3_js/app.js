@@ -1,4 +1,9 @@
 // Main application state
+// Performance optimizations implemented:
+// 1. Cache technical indicators to avoid O(n²) recalculation on time window changes
+// 2. Update charts instead of recreating them when possible  
+// 3. Debounce time window changes to prevent rapid switching issues
+// 4. Optimized SMA and Bollinger Bands calculations with sliding window approach
 class StockApp {
     constructor() {
         this.stockData = [];
@@ -13,6 +18,18 @@ class StockApp {
         this.mousePosition = null;
         this.crosshairOverlays = {};
         this.isUpdating = false;
+
+        // Performance optimization: cache technical indicators
+        this.cachedIndicators = null;
+        this.cachedTradingDaysData = null;
+        this.lastDataLength = 0;
+
+        // Debounce time window changes for better performance
+        this.timeWindowChangeTimeout = null;
+
+        // Mouse event throttling
+        this.lastMouseMoveTime = 0;
+        this.chartEventListeners = {};
 
         this.init();
     }
@@ -93,6 +110,9 @@ class StockApp {
 
             const data = await response.json();
             this.stockData = data;
+
+            // Clear cache when new data is loaded
+            this.clearCache();
             this.updateCharts();
 
         } catch (error) {
@@ -106,22 +126,159 @@ class StockApp {
     changeTimeWindow(timeWindow) {
         this.currentTimeWindow = timeWindow;
 
-        // Update button states
+        // Update button states immediately for responsiveness
         document.querySelectorAll('.time-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.window === timeWindow);
         });
 
-        this.updateCharts();
+        // Debounce chart updates to prevent rapid switching performance issues
+        if (this.timeWindowChangeTimeout) {
+            clearTimeout(this.timeWindowChangeTimeout);
+        }
+
+        // Immediately show loading state to prevent visual lag
+        this.showLoadingState();
+
+        this.timeWindowChangeTimeout = setTimeout(() => {
+            this.updateCharts();
+        }, 100); // 100ms debounce
+    }
+
+    clearCache() {
+        this.cachedIndicators = null;
+        this.cachedTradingDaysData = null;
+        this.lastDataLength = 0;
+    }
+
+    showLoadingState() {
+        // Update status bar to show loading
+        const statusText = document.getElementById('status-text');
+        statusText.textContent = 'Updating charts...';
     }
 
     updateCharts() {
+        // Performance optimization: filter data first
         this.filteredData = filterDataByTimeWindow(this.stockData, this.currentTimeWindow);
-        this.tradingDaysData = [];  // Reset trading days data, will be set in createVolumeChart
+
+        // Cache trading days data and indicators if not already cached or data changed
+        if (!this.cachedTradingDaysData || this.stockData.length !== this.lastDataLength) {
+            this.cachedTradingDaysData = this.stockData.filter(d => d.volume > 0);
+            this.cachedIndicators = prepareIndicatorDatasets(this.cachedTradingDaysData);
+            this.lastDataLength = this.stockData.length;
+
+            console.log('Cached indicators created:', {
+                totalTradingDays: this.cachedTradingDaysData.length,
+                sma10Count: this.cachedIndicators.sma10.length,
+                sma20Count: this.cachedIndicators.sma20.length,
+                sma50Count: this.cachedIndicators.sma50.length,
+                bollingerUpperCount: this.cachedIndicators.bollingerBands.upper.length
+            });
+        }
+
+        // Filter cached trading days data for current time window
+        const filteredTradingDays = filterDataByTimeWindow(this.cachedTradingDaysData, this.currentTimeWindow);
+        this.tradingDaysData = filteredTradingDays;
+
         this.createPriceChart();
         this.createVolumeChart();
         this.selectedDataPoint = null;
         this.selectedTradingDayIndex = null;
         this.updateStatusBar();
+    }
+
+    getFilteredIndicators(tradingDaysData) {
+        if (!this.cachedIndicators || !tradingDaysData || tradingDaysData.length === 0) {
+            return {
+                sma10: [],
+                sma20: [],
+                sma50: [],
+                bollingerBands: { upper: [], middle: [], lower: [] }
+            };
+        }
+
+        // Map trading days data timestamps for filtering
+        const tradingDaysTimestamps = new Set(tradingDaysData.map(d => d.timestamp));
+
+        // Filter cached indicators to match current time window
+        // Keep timestamps as x values since SimpleCandlestickChart expects them
+        return {
+            sma10: this.cachedIndicators.sma10.filter(point =>
+                tradingDaysTimestamps.has(point.x)
+            ),
+            sma20: this.cachedIndicators.sma20.filter(point =>
+                tradingDaysTimestamps.has(point.x)
+            ),
+            sma50: this.cachedIndicators.sma50.filter(point =>
+                tradingDaysTimestamps.has(point.x)
+            ),
+            bollingerBands: {
+                upper: this.cachedIndicators.bollingerBands.upper.filter(point =>
+                    tradingDaysTimestamps.has(point.x)
+                ),
+                middle: this.cachedIndicators.bollingerBands.middle.filter(point =>
+                    tradingDaysTimestamps.has(point.x)
+                ),
+                lower: this.cachedIndicators.bollingerBands.lower.filter(point =>
+                    tradingDaysTimestamps.has(point.x)
+                )
+            }
+        };
+    }
+
+    getFilteredIndicatorsForChartJS(tradingDaysData) {
+        if (!this.cachedIndicators || !tradingDaysData || tradingDaysData.length === 0) {
+            return {
+                sma10: [],
+                sma20: [],
+                sma50: [],
+                bollingerBands: { upper: [], middle: [], lower: [] }
+            };
+        }
+
+        // Map trading days data timestamps for filtering
+        const tradingDaysTimestamps = new Set(tradingDaysData.map(d => d.timestamp));
+
+        // Filter cached indicators and convert to index format for Chart.js
+        return {
+            sma10: this.cachedIndicators.sma10.filter(point =>
+                tradingDaysTimestamps.has(point.x)
+            ).map((point, index) => ({
+                x: index,
+                y: point.y
+            })),
+            sma20: this.cachedIndicators.sma20.filter(point =>
+                tradingDaysTimestamps.has(point.x)
+            ).map((point, index) => ({
+                x: index,
+                y: point.y
+            })),
+            sma50: this.cachedIndicators.sma50.filter(point =>
+                tradingDaysTimestamps.has(point.x)
+            ).map((point, index) => ({
+                x: index,
+                y: point.y
+            })),
+            bollingerBands: {
+                upper: this.cachedIndicators.bollingerBands.upper.filter(point =>
+                    tradingDaysTimestamps.has(point.x)
+                ).map((point, index) => ({
+                    x: index,
+                    y: point.y
+                })),
+                middle: this.cachedIndicators.bollingerBands.middle.filter(point =>
+                    tradingDaysTimestamps.has(point.x)
+                ).map((point, index) => ({
+                    x: index,
+                    y: point.y
+                })),
+                lower: this.cachedIndicators.bollingerBands.lower.filter(point =>
+                    tradingDaysTimestamps.has(point.x)
+                ).map((point, index) => ({
+                    x: index,
+                    y: point.y
+                }))
+            }
+        };
     }
 
     createPriceChart() {
@@ -146,14 +303,33 @@ class StockApp {
         try {
             const canvas = document.getElementById('price-chart');
 
-            // Use trading days data for alignment with volume chart
-            const tradingDaysData = this.filteredData.filter(d => d.volume > 0);
+            // Use pre-filtered trading days data
+            const tradingDaysData = this.tradingDaysData;
 
-            // Calculate technical indicators for the candlestick chart
-            const indicators = prepareIndicatorDatasets(tradingDaysData);
+            // Use cached indicators filtered for current time window
+            const indicators = this.getFilteredIndicators(tradingDaysData);
 
-            this.simpleCandlesticks = new SimpleCandlestickChart(canvas, tradingDaysData);
-            this.simpleCandlesticks.draw(indicators);
+            console.log('Indicators for SimpleCandlestickChart:', {
+                sma10Count: indicators.sma10.length,
+                sma20Count: indicators.sma20.length,
+                sma50Count: indicators.sma50.length,
+                bollingerUpperCount: indicators.bollingerBands.upper.length
+            });
+
+            // Update existing chart or create new one
+            if (this.simpleCandlesticks && this.simpleCandlesticks.canvas === canvas) {
+                this.simpleCandlesticks.updateData(tradingDaysData, indicators);
+            } else {
+                // Clean up old chart if it exists
+                if (this.simpleCandlesticks) {
+                    this.simpleCandlesticks.removeMouseEvents();
+                }
+                this.simpleCandlesticks = new SimpleCandlestickChart(canvas, tradingDaysData);
+                this.simpleCandlesticks.draw(indicators);
+            }
+
+            // Create crosshair overlay for candlestick chart
+            this.createCrosshairOverlay('price-chart');
 
             // Setup mouse events with proper callbacks
             this.simpleCandlesticks.setupMouseEvents(
@@ -166,7 +342,9 @@ class StockApp {
                     this.selectedDataPoint = this.filteredData.findIndex(d => d.timestamp === tradingDay.timestamp);
 
                     this.updateStatusBar();
-                    // Draw crosshair on volume chart
+
+                    // Draw crosshairs on overlays instead of redrawing charts
+                    this.drawCandlestickCrosshair();
                     this.drawVolumeChartCrosshair();
                 },
                 () => {
@@ -174,6 +352,9 @@ class StockApp {
                     this.selectedDataPoint = null;
                     this.selectedTradingDayIndex = null;
                     this.updateStatusBar();
+
+                    // Clear crosshairs on overlays
+                    this.clearCandlestickCrosshair();
                     this.clearVolumeChartCrosshair();
                 }
             );
@@ -188,8 +369,8 @@ class StockApp {
         // Fallback to Chart.js with line charts
         console.log('Falling back to Chart.js line charts');
 
-        // Use trading days data for alignment with volume chart
-        const tradingDaysData = this.filteredData.filter(d => d.volume > 0);
+        // Use pre-filtered trading days data
+        const tradingDaysData = this.tradingDaysData;
 
         // Prepare close price line data as fallback - use index for x to match volume chart
         const closeData = tradingDaysData.map((d, index) => ({
@@ -210,8 +391,8 @@ class StockApp {
 
         console.log('Sample data:', closeData[0]);
 
-        // Calculate technical indicators
-        const indicators = prepareIndicatorDatasets(tradingDaysData);
+        // Use cached indicators filtered for current time window (convert to index format for Chart.js)
+        const indicators = this.getFilteredIndicatorsForChartJS(tradingDaysData);
 
         const datasets = [
             // High-Low range visualization
@@ -310,12 +491,14 @@ class StockApp {
 
         console.log('Chart created successfully');
 
+        // Clean up old event listeners
+        this.cleanupChartEventListeners('price-chart');
+
         // Create crosshair overlay for price chart (Chart.js fallback mode)
         this.createCrosshairOverlay('price-chart');
 
-        // Add mouse move event for crosshairs
-        ctx.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e, 'price'));
-        ctx.canvas.addEventListener('mouseleave', () => this.handleMouseLeave());
+        // Add throttled mouse move event for crosshairs
+        this.addChartEventListeners('price-chart', 'price');
     }
 
     createVolumeChart() {
@@ -327,9 +510,6 @@ class StockApp {
             return;
         }
 
-        // Filter out days with zero volume (weekends/holidays)
-        this.tradingDaysData = this.filteredData.filter(d => d.volume > 0);
-
         console.log('Creating volume chart with', this.tradingDaysData.length, 'trading days (filtered from', this.filteredData.length, 'total days)');
 
         if (this.tradingDaysData.length === 0) {
@@ -338,19 +518,25 @@ class StockApp {
             return;
         }
 
-        // Create custom volume chart using same approach as SimpleCandlestickChart
+        // Update existing chart or create new one
         try {
-            this.simpleVolumeChart = new SimpleVolumeChart(canvas, this.tradingDaysData);
-            this.simpleVolumeChart.draw();
+            if (this.simpleVolumeChart && this.simpleVolumeChart.canvas === canvas) {
+                this.simpleVolumeChart.updateData(this.tradingDaysData);
+            } else {
+                this.simpleVolumeChart = new SimpleVolumeChart(canvas, this.tradingDaysData);
+                this.simpleVolumeChart.draw();
+            }
 
-            console.log('Simple volume chart created successfully');
+            console.log('Simple volume chart updated successfully');
+
+            // Clean up old event listeners
+            this.cleanupChartEventListeners('volume-chart');
 
             // Create crosshair overlay for volume chart
             this.createCrosshairOverlay('volume-chart');
 
-            // Add mouse move event for crosshairs
-            canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e, 'volume'));
-            canvas.addEventListener('mouseleave', () => this.handleMouseLeave());
+            // Add throttled mouse move event for crosshairs
+            this.addChartEventListeners('volume-chart', 'volume');
 
         } catch (error) {
             console.error('Simple volume chart failed:', error);
@@ -362,6 +548,12 @@ class StockApp {
 
     handleMouseMove(event, chartType) {
         if (!this.tradingDaysData.length) return;
+
+        // Throttle mouse moves for better performance
+        const now = Date.now();
+        if (!this.lastMouseMoveTime) this.lastMouseMoveTime = 0;
+        if (now - this.lastMouseMoveTime < 16) return; // ~60fps
+        this.lastMouseMoveTime = now;
 
         const rect = event.target.getBoundingClientRect();
         const x = event.clientX - rect.left;
@@ -398,31 +590,15 @@ class StockApp {
         this.selectedTradingDayIndex = null;
         this.updateStatusBar();
 
-        // Clear crosshair overlays
+        // Clear all crosshair overlays
+        this.clearCandlestickCrosshair();
         this.clearVolumeChartCrosshair();
-
-        // Clear price chart crosshair overlay if using Chart.js fallback
-        const priceOverlay = this.crosshairOverlays['price-chart'];
-        if (priceOverlay) {
-            const ctx = priceOverlay.getContext('2d');
-            ctx.clearRect(0, 0, priceOverlay.width, priceOverlay.height);
-        }
-
-        if (this.priceChart) {
-            this.priceChart.update('none');
-        }
     }
 
     drawCrosshairs() {
-        if (this.selectedDataPoint === null) return;
-
-        // Update price chart to show crosshairs
-        if (this.priceChart) {
-            this.priceChart.update('none');
-        }
-
-        // Draw crosshair lines on both charts
-        this.drawCrosshairLines();
+        // Draw crosshairs on overlays for better performance
+        this.drawCandlestickCrosshair();
+        this.drawVolumeChartCrosshair();
     }
 
     createCrosshairOverlay(chartId) {
@@ -457,8 +633,128 @@ class StockApp {
         this.crosshairOverlays[chartId] = overlay;
     }
 
+    cleanupChartEventListeners(chartId) {
+        const canvas = document.getElementById(chartId);
+        if (!canvas) return;
+
+        // Store references to remove specific listeners
+        if (this.chartEventListeners && this.chartEventListeners[chartId]) {
+            const listeners = this.chartEventListeners[chartId];
+            if (listeners.mousemove) {
+                canvas.removeEventListener('mousemove', listeners.mousemove);
+            }
+            if (listeners.mouseleave) {
+                canvas.removeEventListener('mouseleave', listeners.mouseleave);
+            }
+        }
+    }
+
+    addChartEventListeners(chartId, chartType) {
+        const canvas = document.getElementById(chartId);
+        if (!canvas) return;
+
+        // Initialize event listeners storage
+        if (!this.chartEventListeners) {
+            this.chartEventListeners = {};
+        }
+
+        // Create throttled event handlers
+        const mousemoveHandler = (e) => this.handleMouseMove(e, chartType);
+        const mouseleaveHandler = () => this.handleMouseLeave();
+
+        // Store references for cleanup
+        this.chartEventListeners[chartId] = {
+            mousemove: mousemoveHandler,
+            mouseleave: mouseleaveHandler
+        };
+
+        // Add event listeners
+        canvas.addEventListener('mousemove', mousemoveHandler);
+        canvas.addEventListener('mouseleave', mouseleaveHandler);
+    }
+
+    drawCandlestickCrosshair() {
+        if (this.selectedTradingDayIndex === null || !this.tradingDaysData.length) return;
+
+        const overlay = this.crosshairOverlays['price-chart'];
+        if (!overlay) return;
+
+        const ctx = overlay.getContext('2d');
+
+        // Clear previous crosshair
+        ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+        // Handle SimpleCandlestickChart
+        if (this.simpleCandlesticks) {
+            const chartArea = this.simpleCandlesticks.chartArea;
+            const xPosition = this.simpleCandlesticks.xPosition(this.selectedTradingDayIndex);
+
+            // Get price data for horizontal crosshair
+            const dataPoint = this.tradingDaysData[this.selectedTradingDayIndex];
+            if (!dataPoint) return;
+
+            const { min, max } = this.simpleCandlesticks.getMinMax();
+            const closeY = this.simpleCandlesticks.yPosition(dataPoint.close, min, max);
+
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([2, 2]);
+
+            // Vertical line
+            ctx.beginPath();
+            ctx.moveTo(xPosition, chartArea.top);
+            ctx.lineTo(xPosition, chartArea.bottom);
+            ctx.stroke();
+
+            // Horizontal line at close price
+            ctx.beginPath();
+            ctx.moveTo(chartArea.left, closeY);
+            ctx.lineTo(chartArea.right, closeY);
+            ctx.stroke();
+
+            // Draw intersection point
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.beginPath();
+            ctx.arc(xPosition, closeY, 3, 0, 2 * Math.PI);
+            ctx.fill();
+
+            ctx.restore();
+        }
+        // Handle Chart.js fallback mode
+        else if (this.priceChart && this.priceChart.chartArea) {
+            const priceChartArea = this.priceChart.chartArea;
+
+            // Calculate x position based on trading day index
+            const xPosition = priceChartArea.left +
+                (this.selectedTradingDayIndex / Math.max(1, this.tradingDaysData.length - 1)) *
+                (priceChartArea.right - priceChartArea.left);
+
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([2, 2]);
+
+            // Vertical line only for Chart.js fallback
+            ctx.beginPath();
+            ctx.moveTo(xPosition, priceChartArea.top);
+            ctx.lineTo(xPosition, priceChartArea.bottom);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+    }
+
+    clearCandlestickCrosshair() {
+        const overlay = this.crosshairOverlays['price-chart'];
+        if (!overlay) return;
+
+        const ctx = overlay.getContext('2d');
+        ctx.clearRect(0, 0, overlay.width, overlay.height);
+    }
+
     drawVolumeChartCrosshair() {
-        if (this.selectedTradingDayIndex === undefined || !this.simpleVolumeChart || !this.tradingDaysData.length) return;
+        if (this.selectedTradingDayIndex === null || !this.simpleVolumeChart || !this.tradingDaysData.length) return;
 
         const overlay = this.crosshairOverlays['volume-chart'];
         if (!overlay) return;
@@ -494,40 +790,7 @@ class StockApp {
         ctx.clearRect(0, 0, overlay.width, overlay.height);
     }
 
-    drawCrosshairLines() {
-        if (this.selectedTradingDayIndex === null || !this.tradingDaysData.length) return;
 
-        // For Chart.js fallback mode, draw crosshairs on overlays
-        if (this.priceChart && this.crosshairOverlays['price-chart']) {
-            const overlay = this.crosshairOverlays['price-chart'];
-            const ctx = overlay.getContext('2d');
-            const priceChartArea = this.priceChart.chartArea;
-
-            // Clear previous crosshair
-            ctx.clearRect(0, 0, overlay.width, overlay.height);
-
-            // Calculate x position based on trading day index (both charts use same indices now)
-            const xPosition = priceChartArea.left +
-                (this.selectedTradingDayIndex / Math.max(1, this.tradingDaysData.length - 1)) *
-                (priceChartArea.right - priceChartArea.left);
-
-            ctx.save();
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([2, 2]);
-
-            // Vertical line
-            ctx.beginPath();
-            ctx.moveTo(xPosition, priceChartArea.top);
-            ctx.lineTo(xPosition, priceChartArea.bottom);
-            ctx.stroke();
-
-            ctx.restore();
-        }
-
-        // Draw crosshair on volume chart
-        this.drawVolumeChartCrosshair();
-    }
 
     updateStatusBar(errorMessage = null) {
         const statusText = document.getElementById('status-text');
@@ -955,6 +1218,11 @@ class SimpleVolumeChart {
         });
 
         console.log(`Drew ${this.data.length} volume bars`);
+    }
+
+    updateData(newData) {
+        this.data = newData;
+        this.draw();
     }
 }
 
