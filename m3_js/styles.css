@@ -47,7 +47,8 @@ body {
     border-color: #007acc;
 }
 
-#load-button {
+#load-button,
+#update-button {
     padding: 10px 20px;
     background-color: #007acc;
     border: none;
@@ -58,8 +59,24 @@ body {
     cursor: pointer;
 }
 
-#load-button:hover {
+#load-button:hover,
+#update-button:hover {
     background-color: #005a9e;
+}
+
+#update-button.disabled {
+    background-color: #4a4a4a;
+    color: #888;
+    cursor: not-allowed;
+}
+
+#update-button.disabled:hover {
+    background-color: #4a4a4a;
+}
+
+#update-button.updating {
+    background-color: #ff8c00;
+    color: white;
 }
 
 .time-window-controls {

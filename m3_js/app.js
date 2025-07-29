@@ -12,6 +12,7 @@ class StockApp {
         this.selectedTradingDayIndex = null;
         this.mousePosition = null;
         this.crosshairOverlays = {};
+        this.isUpdating = false;
 
         this.init();
     }
@@ -19,12 +20,14 @@ class StockApp {
     init() {
         this.setupEventListeners();
         this.loadData(this.currentTicker);
+        this.checkDataStatus(this.currentTicker);
     }
 
     setupEventListeners() {
-        // Ticker input and load button
+        // Ticker input and buttons
         const tickerInput = document.getElementById('ticker-input');
         const loadButton = document.getElementById('load-button');
+        const updateButton = document.getElementById('update-button');
 
         tickerInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
@@ -36,6 +39,10 @@ class StockApp {
         loadButton.addEventListener('click', () => {
             this.loadData(tickerInput.value);
             tickerInput.blur();
+        });
+
+        updateButton.addEventListener('click', () => {
+            this.updateData(tickerInput.value);
         });
 
         // Time window buttons
@@ -50,6 +57,9 @@ class StockApp {
             if (e.ctrlKey && (e.key === 'q' || e.key === 'w')) {
                 e.preventDefault();
                 window.close();
+            } else if (e.ctrlKey && e.key === 'Enter') {
+                e.preventDefault();
+                this.updateData(tickerInput.value);
             } else if (e.key === 'F11') {
                 e.preventDefault();
                 this.toggleFullscreen();
@@ -65,6 +75,9 @@ class StockApp {
 
         this.currentTicker = ticker.toUpperCase();
         document.getElementById('ticker-input').value = this.currentTicker;
+
+        // Check data status when loading new ticker
+        this.checkDataStatus(this.currentTicker);
 
         try {
             const response = await fetch(`/api/stock/${this.currentTicker}`);
@@ -728,6 +741,78 @@ class StockApp {
                 tooltip: { enabled: false }
             }
         };
+    }
+
+    async checkDataStatus(ticker) {
+        if (!ticker.trim()) return;
+
+        try {
+            const response = await fetch(`/api/stock/${ticker.toUpperCase()}/status`);
+            const status = await response.json();
+
+            const updateButton = document.getElementById('update-button');
+
+            if (status.upToDate) {
+                updateButton.classList.add('disabled');
+                updateButton.textContent = 'Data Up to Date';
+                updateButton.disabled = true;
+            } else {
+                updateButton.classList.remove('disabled');
+                updateButton.textContent = 'Update Data';
+                updateButton.disabled = false;
+            }
+        } catch (error) {
+            console.error('Error checking data status:', error);
+            // Enable button if we can't check status
+            const updateButton = document.getElementById('update-button');
+            updateButton.classList.remove('disabled');
+            updateButton.textContent = 'Update Data';
+            updateButton.disabled = false;
+        }
+    }
+
+    async updateData(ticker) {
+        if (!ticker.trim() || this.isUpdating) return;
+
+        const updateButton = document.getElementById('update-button');
+
+        // Prevent multiple updates
+        this.isUpdating = true;
+        updateButton.classList.add('updating');
+        updateButton.textContent = 'Updating...';
+        updateButton.disabled = true;
+
+        try {
+            const response = await fetch(`/api/stock/${ticker.toUpperCase()}/update`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.updateStatusBar(`Successfully updated data for ${ticker.toUpperCase()}`);
+                // Reload the data after successful update
+                await this.loadData(ticker);
+            } else {
+                this.updateStatusBar(`Failed to update data: ${result.message}`);
+            }
+
+        } catch (error) {
+            console.error('Error updating data:', error);
+            this.updateStatusBar('Error updating data: ' + error.message);
+        } finally {
+            // Reset button state
+            this.isUpdating = false;
+            updateButton.classList.remove('updating');
+
+            // Check status again to update button state
+            setTimeout(() => {
+                this.checkDataStatus(ticker);
+            }, 1000);
+        }
     }
 }
 
