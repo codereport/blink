@@ -93,7 +93,7 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 5px;
     min-height: 0;
     /* Important for flex child to shrink */
 }
@@ -110,14 +110,14 @@ body {
 }
 
 .volume-chart-wrapper {
-    flex: 3.5;
-    /* Increased to make volume bars more visible */
+    flex: 1.56;
+    /* Reduced by another 40% from 2.6 */
     position: relative;
     background-color: #0a0a0a;
     border: 1px solid #2a2a2a;
     border-radius: 4px;
-    min-height: 180px;
-    /* Increased minimum height for volume chart */
+    min-height: 81px;
+    /* Reduced by another 40% from 135px */
 }
 
 /* Crosshair overlay styling */

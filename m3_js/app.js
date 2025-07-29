@@ -738,7 +738,7 @@ class SimpleVolumeChart {
         this.ctx = canvas.getContext('2d');
         this.data = data;
         this.options = {
-            padding: { top: 20, bottom: 60, left: 60, right: 20 }, // Match SimpleCandlestickChart
+            padding: { top: 20, bottom: 20, left: 60, right: 20 }, // Reduced bottom padding from 60 to 20
             barWidth: 8, // Match candleWidth
             colors: {
                 up: 'rgba(0, 255, 0, 0.6)',
