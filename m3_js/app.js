@@ -35,6 +35,9 @@ class StockApp {
         this.lastMouseMoveTime = 0;
         this.chartEventListeners = {};
 
+        // Technical indicators toggle
+        this.showTechnicalIndicators = true;
+
         this.init();
     }
 
@@ -83,6 +86,7 @@ class StockApp {
             } else if (e.ctrlKey && e.key === 'Enter') {
                 e.preventDefault();
                 this.updateData(tickerInput.value);
+                tickerInput.blur();
             } else if (e.key === 'F11') {
                 e.preventDefault();
                 this.toggleFullscreen();
@@ -102,6 +106,9 @@ class StockApp {
                 // Navigate down in ticker list
                 e.preventDefault();
                 this.navigateTickers(1);
+            } else if (e.key === 't' && e.target !== tickerInput) {
+                e.preventDefault();
+                this.toggleTechnicalIndicators();
             }
         });
     }
@@ -287,7 +294,7 @@ class StockApp {
     }
 
     getFilteredIndicators(tradingDaysData) {
-        if (!this.cachedIndicators || !tradingDaysData || tradingDaysData.length === 0) {
+        if (!this.showTechnicalIndicators || !this.cachedIndicators || !tradingDaysData || tradingDaysData.length === 0) {
             return {
                 sma10: [],
                 sma20: [],
@@ -326,7 +333,7 @@ class StockApp {
     }
 
     getFilteredIndicatorsForChartJS(tradingDaysData) {
-        if (!this.cachedIndicators || !tradingDaysData || tradingDaysData.length === 0) {
+        if (!this.showTechnicalIndicators || !this.cachedIndicators || !tradingDaysData || tradingDaysData.length === 0) {
             return {
                 sma10: [],
                 sma20: [],
@@ -1185,6 +1192,20 @@ class StockApp {
                 this.checkDataStatus(ticker);
             }, 1000);
         }
+    }
+
+    toggleTechnicalIndicators() {
+        this.showTechnicalIndicators = !this.showTechnicalIndicators;
+        this.updateCharts();
+
+        // Provide user feedback
+        const status = this.showTechnicalIndicators ? 'enabled' : 'disabled';
+        this.updateStatusBar(`Technical indicators ${status}`);
+
+        // Clear the status message after 2 seconds, reverting to normal display
+        setTimeout(() => {
+            this.updateStatusBar();
+        }, 2000);
     }
 }
 
