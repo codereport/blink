@@ -824,6 +824,34 @@ class StockApp {
             ctx.lineTo(chartArea.right, closeY);
             ctx.stroke();
 
+            // Draw price label on the right side
+            const priceText = dataPoint.close.toFixed(2);
+            ctx.font = '12px monospace';
+            ctx.textAlign = 'left';
+            const textMetrics = ctx.measureText(priceText);
+            const labelPadding = 6;
+            const labelWidth = textMetrics.width + (labelPadding * 2);
+            const labelHeight = 16;
+            const labelX = chartArea.right - labelWidth - 5; // Position inside chart area
+            const labelY = closeY - (labelHeight / 2);
+
+            // Draw label background
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
+
+            // Draw label border
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([]);
+            ctx.strokeRect(labelX, labelY, labelWidth, labelHeight);
+
+            // Draw price text
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.fillText(priceText, labelX + labelPadding, labelY + 12);
+
+            // Reset line dash for intersection point
+            ctx.setLineDash([2, 2]);
+
             // Draw intersection point
             ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
             ctx.beginPath();
@@ -835,22 +863,70 @@ class StockApp {
         // Handle Chart.js fallback mode
         else if (this.priceChart && this.priceChart.chartArea) {
             const priceChartArea = this.priceChart.chartArea;
+            const dataPoint = this.tradingDaysData[this.selectedTradingDayIndex];
+            if (!dataPoint) return;
 
             // Calculate x position based on trading day index
             const xPosition = priceChartArea.left +
                 (this.selectedTradingDayIndex / Math.max(1, this.tradingDaysData.length - 1)) *
                 (priceChartArea.right - priceChartArea.left);
 
+            // Calculate y position for close price
+            const priceRange = this.priceChart.scales.y.max - this.priceChart.scales.y.min;
+            const closeY = priceChartArea.bottom -
+                ((dataPoint.close - this.priceChart.scales.y.min) / priceRange) *
+                (priceChartArea.bottom - priceChartArea.top);
+
             ctx.save();
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
             ctx.lineWidth = 1;
             ctx.setLineDash([2, 2]);
 
-            // Vertical line only for Chart.js fallback
+            // Vertical line
             ctx.beginPath();
             ctx.moveTo(xPosition, priceChartArea.top);
             ctx.lineTo(xPosition, priceChartArea.bottom);
             ctx.stroke();
+
+            // Horizontal line at close price
+            ctx.beginPath();
+            ctx.moveTo(priceChartArea.left, closeY);
+            ctx.lineTo(priceChartArea.right, closeY);
+            ctx.stroke();
+
+            // Draw price label on the right side
+            const priceText = dataPoint.close.toFixed(2);
+            ctx.font = '12px monospace';
+            ctx.textAlign = 'left';
+            const textMetrics = ctx.measureText(priceText);
+            const labelPadding = 6;
+            const labelWidth = textMetrics.width + (labelPadding * 2);
+            const labelHeight = 16;
+            const labelX = priceChartArea.right - labelWidth - 5; // Position inside chart area
+            const labelY = closeY - (labelHeight / 2);
+
+            // Draw label background
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
+
+            // Draw label border
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([]);
+            ctx.strokeRect(labelX, labelY, labelWidth, labelHeight);
+
+            // Draw price text
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.fillText(priceText, labelX + labelPadding, labelY + 12);
+
+            // Reset line dash for intersection point
+            ctx.setLineDash([2, 2]);
+
+            // Draw intersection point
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.beginPath();
+            ctx.arc(xPosition, closeY, 3, 0, 2 * Math.PI);
+            ctx.fill();
 
             ctx.restore();
         }
