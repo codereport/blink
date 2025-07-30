@@ -1219,8 +1219,8 @@ class SimpleVolumeChart {
             padding: { top: 20, bottom: 20, left: 60, right: 20 }, // Reduced bottom padding from 60 to 20
             barWidth: 8, // Will be calculated based on data
             colors: {
-                up: 'rgba(0, 255, 0, 0.6)',
-                down: 'rgba(255, 0, 0, 0.6)',
+                up: '#00ff00',
+                down: '#ff0000',
                 grid: 'rgba(255, 255, 255, 0.1)',
                 text: '#666666'
             },
