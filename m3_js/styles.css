@@ -213,6 +213,11 @@ body {
     align-items: center;
 }
 
+.status-bar.status-dimmed {
+    opacity: 0.7;
+    color: #888;
+}
+
 .controls-info {
     margin-top: 10px;
     text-align: center;
