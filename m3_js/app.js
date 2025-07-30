@@ -1016,9 +1016,11 @@ class StockApp {
             const dailyChange = dailyChanges[dataIndex] || 0;
             const date = new Date(dataPoint.timestamp).toISOString().split('T')[0];
 
-            // Format daily change with sign for consistency
+            // Format daily change with sign for consistency and determine color
             const changeSign = dailyChange >= 0 ? '+' : '';
             const changeText = `${changeSign}${dailyChange.toFixed(2)}%`;
+            const changeColor = dailyChange >= 0 ? '#00ff00' : '#ff0000';
+            const closeColor = dailyChange >= 0 ? '#00ff00' : '#ff0000';
 
             // Show volume as "No Trading" if it's zero (weekend/holiday)
             const volumeDisplay = dataPoint.volume === 0 ? 'No Trading' : this.formatVolumeNumber(dataPoint.volume);
@@ -1026,14 +1028,14 @@ class StockApp {
             // Apply dimmed styling if showing most recent data
             statusText.classList.toggle('status-dimmed', isDimmed);
 
-            statusText.textContent =
+            statusText.innerHTML =
                 `Date: ${date} | ` +
-                `Daily % Gain/Loss: ${changeText.padStart(7)} | ` +
+                `Daily % Gain/Loss: <span style="color: ${changeColor}; font-weight: bold">${changeText.padStart(7)}</span> | ` +
                 `Volume: ${volumeDisplay.padStart(6)} | ` +
                 `Open: ${dataPoint.open.toFixed(2).padStart(6)} | ` +
                 `High: ${dataPoint.high.toFixed(2).padStart(6)} | ` +
                 `Low: ${dataPoint.low.toFixed(2).padStart(6)} | ` +
-                `Close: ${dataPoint.close.toFixed(2).padStart(6)}`;
+                `Close: <span style="color: ${closeColor}; font-weight: bold">${dataPoint.close.toFixed(2).padStart(6)}</span>`;
         } else {
             // No data available - show placeholder
             statusText.classList.remove('status-dimmed');
