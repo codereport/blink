@@ -987,11 +987,33 @@ class StockApp {
             return;
         }
 
-        if (this.selectedDataPoint !== null && this.filteredData[this.selectedDataPoint]) {
-            const dataPoint = this.filteredData[this.selectedDataPoint];
-            const dailyChanges = calculateDailyChange(this.filteredData);
-            const dailyChange = dailyChanges[this.selectedDataPoint] || 0;
+        // Determine which data point to display
+        let dataPoint = null;
+        let dataIndex = null;
+        let isDimmed = false;
 
+        if (this.selectedDataPoint !== null && this.filteredData[this.selectedDataPoint]) {
+            // Show selected data point when hovering
+            dataPoint = this.filteredData[this.selectedDataPoint];
+            dataIndex = this.selectedDataPoint;
+            isDimmed = false;
+        } else if (this.filteredData && this.filteredData.length > 0) {
+            // Show most recent trading day when not hovering
+            dataPoint = this.filteredData[this.filteredData.length - 1];
+            for (let i = this.filteredData.length - 1; i >= 0; i--) {
+                if (this.filteredData[i].volume > 0) {
+                    dataPoint = this.filteredData[i];
+                    break;
+                }
+            }
+            dataIndex = this.filteredData.indexOf(dataPoint);
+            isDimmed = true;
+        }
+
+        if (dataPoint) {
+            // Format and display the data point
+            const dailyChanges = calculateDailyChange(this.filteredData);
+            const dailyChange = dailyChanges[dataIndex] || 0;
             const date = new Date(dataPoint.timestamp).toISOString().split('T')[0];
 
             // Format daily change with sign for consistency
@@ -1001,10 +1023,9 @@ class StockApp {
             // Show volume as "No Trading" if it's zero (weekend/holiday)
             const volumeDisplay = dataPoint.volume === 0 ? 'No Trading' : this.formatVolumeNumber(dataPoint.volume);
 
-            // Remove dimmed class when showing selected data
-            statusText.classList.remove('status-dimmed');
+            // Apply dimmed styling if showing most recent data
+            statusText.classList.toggle('status-dimmed', isDimmed);
 
-            // Use generous padding to prevent any jumpiness
             statusText.textContent =
                 `Date: ${date} | ` +
                 `Daily % Gain/Loss: ${changeText.padStart(7)} | ` +
@@ -1014,48 +1035,9 @@ class StockApp {
                 `Low: ${dataPoint.low.toFixed(2).padStart(6)} | ` +
                 `Close: ${dataPoint.close.toFixed(2).padStart(6)}`;
         } else {
-            // Show most recent day's data when not hovering over any specific point
-            if (this.filteredData && this.filteredData.length > 0) {
-                // Find the most recent trading day (last day with volume > 0, or just last day if none)
-                let recentDataPoint = this.filteredData[this.filteredData.length - 1];
-                for (let i = this.filteredData.length - 1; i >= 0; i--) {
-                    if (this.filteredData[i].volume > 0) {
-                        recentDataPoint = this.filteredData[i];
-                        break;
-                    }
-                }
-
-                const dailyChanges = calculateDailyChange(this.filteredData);
-                const recentIndex = this.filteredData.indexOf(recentDataPoint);
-                const dailyChange = dailyChanges[recentIndex] || 0;
-
-                const date = new Date(recentDataPoint.timestamp).toISOString().split('T')[0];
-
-                // Format daily change with sign for consistency
-                const changeSign = dailyChange >= 0 ? '+' : '';
-                const changeText = `${changeSign}${dailyChange.toFixed(2)}%`;
-
-                // Show volume as "No Trading" if it's zero (weekend/holiday)
-                const volumeDisplay = recentDataPoint.volume === 0 ? 'No Trading' : this.formatVolumeNumber(recentDataPoint.volume);
-
-                // Add dimmed class when showing most recent data
-                statusText.classList.add('status-dimmed');
-
-                // Show recent data with same formatting but dimmed styling
-                statusText.textContent =
-                    `Date: ${date} | ` +
-                    `Daily % Gain/Loss: ${changeText.padStart(7)} | ` +
-                    `Volume: ${volumeDisplay.padStart(6)} | ` +
-                    `Open: ${recentDataPoint.open.toFixed(2).padStart(6)} | ` +
-                    `High: ${recentDataPoint.high.toFixed(2).padStart(6)} | ` +
-                    `Low: ${recentDataPoint.low.toFixed(2).padStart(6)} | ` +
-                    `Close: ${recentDataPoint.close.toFixed(2).padStart(6)}`;
-            } else {
-                // Remove dimmed class for placeholder text
-                statusText.classList.remove('status-dimmed');
-                statusText.textContent =
-                    'Date:              | Daily % Gain/Loss:           | Volume:                 | Open:            | High:            | Low:             | Close:           ';
-            }
+            // No data available - show placeholder
+            statusText.classList.remove('status-dimmed');
+            statusText.textContent = 'no info';
         }
     }
 
