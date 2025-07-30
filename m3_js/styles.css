@@ -206,9 +206,11 @@ body {
     border-radius: 4px;
     font-size: 14px;
     font-family: 'JetBrains Mono', monospace;
-    white-space: nowrap;
+    white-space: pre;
     overflow: hidden;
-    text-align: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .controls-info {

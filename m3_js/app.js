@@ -994,20 +994,25 @@ class StockApp {
 
             const date = new Date(dataPoint.timestamp).toISOString().split('T')[0];
 
-            // Show volume as "No Trading" if it's zero (weekend/holiday)
-            const volumeDisplay = dataPoint.volume === 0 ? 'No Trading'.padStart(12) : this.formatVolumeNumber(dataPoint.volume).padStart(12);
+            // Format daily change with sign for consistency
+            const changeSign = dailyChange >= 0 ? '+' : '';
+            const changeText = `${changeSign}${dailyChange.toFixed(2)}%`;
 
+            // Show volume as "No Trading" if it's zero (weekend/holiday)
+            const volumeDisplay = dataPoint.volume === 0 ? 'No Trading' : this.formatVolumeNumber(dataPoint.volume);
+
+            // Use generous padding to prevent any jumpiness
             statusText.textContent =
-                `Date: ${date.padEnd(10)} | ` +
-                `Daily % Gain/Loss: ${dailyChange.toFixed(2).padStart(8)}% | ` +
-                `Volume: ${volumeDisplay} | ` +
-                `Open: ${dataPoint.open.toFixed(2).padStart(8)} | ` +
-                `High: ${dataPoint.high.toFixed(2).padStart(8)} | ` +
-                `Low: ${dataPoint.low.toFixed(2).padStart(8)} | ` +
-                `Close: ${dataPoint.close.toFixed(2).padStart(8)}`;
+                `Date: ${date} | ` +
+                `Daily % Gain/Loss: ${changeText.padStart(7)} | ` +
+                `Volume: ${volumeDisplay.padStart(6)} | ` +
+                `Open: ${dataPoint.open.toFixed(2).padStart(6)} | ` +
+                `High: ${dataPoint.high.toFixed(2).padStart(6)} | ` +
+                `Low: ${dataPoint.low.toFixed(2).padStart(6)} | ` +
+                `Close: ${dataPoint.close.toFixed(2).padStart(6)}`;
         } else {
             statusText.textContent =
-                'Date:            | Daily % Gain/Loss:         % | Volume:              | Open:         | High:         | Low:          | Close:        ';
+                'Date:              | Daily % Gain/Loss:           | Volume:                 | Open:            | High:            | Low:             | Close:           ';
         }
     }
 
