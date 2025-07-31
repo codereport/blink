@@ -18,6 +18,7 @@ class StockApp {
         this.mousePosition = null;
         this.crosshairOverlays = {};
         this.isUpdating = false;
+        this.isUpdatingAll = false;
 
         // Available tickers will be loaded dynamically
         this.availableTickers = [];
@@ -57,6 +58,7 @@ class StockApp {
         const tickerInput = document.getElementById('ticker-input');
         const loadButton = document.getElementById('load-button');
         const updateButton = document.getElementById('update-button');
+        const updateAllButton = document.getElementById('update-all-button');
 
         tickerInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
@@ -74,6 +76,10 @@ class StockApp {
             this.updateData(tickerInput.value);
         });
 
+        updateAllButton.addEventListener('click', () => {
+            this.updateAllData();
+        });
+
         // Time window buttons
         document.querySelectorAll('.time-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -86,6 +92,10 @@ class StockApp {
             if (e.ctrlKey && (e.key === 'q' || e.key === 'w')) {
                 e.preventDefault();
                 window.close();
+            } else if (e.ctrlKey && e.shiftKey && e.key === 'Enter') {
+                e.preventDefault();
+                this.updateAllData();
+                tickerInput.blur();
             } else if (e.ctrlKey && e.key === 'Enter') {
                 e.preventDefault();
                 this.updateData(tickerInput.value);
@@ -1556,7 +1566,7 @@ class StockApp {
     }
 
     async updateData(ticker) {
-        if (!ticker.trim() || this.isUpdating) return;
+        if (!ticker.trim() || this.isUpdating || this.isUpdatingAll) return;
 
         const updateButton = document.getElementById('update-button');
 
@@ -1595,6 +1605,90 @@ class StockApp {
             // Check status again to update button state and refresh ticker colors
             setTimeout(async () => {
                 this.checkDataStatus(ticker);
+                await this.refreshTickerColors();
+            }, 1000);
+        }
+    }
+
+    async updateAllData() {
+        if (this.isUpdatingAll || this.isUpdating) return;
+
+        const updateAllButton = document.getElementById('update-all-button');
+        const updateButton = document.getElementById('update-button');
+
+        // Prevent multiple updates
+        this.isUpdatingAll = true;
+        updateAllButton.classList.add('updating');
+        updateAllButton.textContent = 'Updating All...';
+        updateAllButton.disabled = true;
+
+        // Also disable the regular update button during update all
+        updateButton.disabled = true;
+
+        this.updateStatusBar('Starting update for all tickers...');
+
+        let successCount = 0;
+        let errorCount = 0;
+        const totalTickers = this.availableTickers.length;
+
+        try {
+            // Process tickers sequentially to avoid overwhelming the server
+            for (let i = 0; i < this.availableTickers.length; i++) {
+                const ticker = this.availableTickers[i];
+
+                // Update progress in button text
+                updateAllButton.textContent = `Updating ${i + 1}/${totalTickers}...`;
+                this.updateStatusBar(`Updating ${ticker} (${i + 1}/${totalTickers})...`);
+
+                try {
+                    const response = await fetch(`/api/stock/${ticker.toUpperCase()}/update`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        successCount++;
+                    } else {
+                        errorCount++;
+                        console.error(`Failed to update ${ticker}: ${result.message}`);
+                    }
+
+                } catch (error) {
+                    errorCount++;
+                    console.error(`Error updating ${ticker}:`, error);
+                }
+
+                // Small delay between requests to avoid overwhelming the server
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            // Update status with final results
+            const statusMessage = `Update complete: ${successCount} successful, ${errorCount} failed`;
+            this.updateStatusBar(statusMessage);
+
+            // Reload current ticker's data if it was successfully updated
+            if (this.availableTickers.includes(this.currentTicker)) {
+                await this.loadData(this.currentTicker);
+            }
+
+        } catch (error) {
+            console.error('Error during update all:', error);
+            this.updateStatusBar('Error during update all: ' + error.message);
+        } finally {
+            // Reset button states
+            this.isUpdatingAll = false;
+            updateAllButton.classList.remove('updating');
+            updateAllButton.textContent = 'Update All';
+            updateAllButton.disabled = false;
+            updateButton.disabled = false;
+
+            // Refresh ticker colors and status after a brief delay
+            setTimeout(async () => {
+                this.checkDataStatus(this.currentTicker);
                 await this.refreshTickerColors();
             }, 1000);
         }

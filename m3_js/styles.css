@@ -48,7 +48,8 @@ body {
 }
 
 #load-button,
-#update-button {
+#update-button,
+#update-all-button {
     padding: 10px 20px;
     background-color: #007acc;
     border: none;
@@ -60,21 +61,25 @@ body {
 }
 
 #load-button:hover,
-#update-button:hover {
+#update-button:hover,
+#update-all-button:hover {
     background-color: #005a9e;
 }
 
-#update-button.disabled {
+#update-button.disabled,
+#update-all-button.disabled {
     background-color: #4a4a4a;
     color: #888;
     cursor: not-allowed;
 }
 
-#update-button.disabled:hover {
+#update-button.disabled:hover,
+#update-all-button.disabled:hover {
     background-color: #4a4a4a;
 }
 
-#update-button.updating {
+#update-button.updating,
+#update-all-button.updating {
     background-color: #ff8c00;
     color: white;
 }
