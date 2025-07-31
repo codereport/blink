@@ -161,10 +161,14 @@ body {
     border-color: #4a4a4a;
 }
 
-.ticker-item.active {
-    background-color: #007acc;
-    border-color: #007acc;
-    color: white;
+/* Active ticker styling is now handled via JavaScript for ticker name color */
+
+.ticker-name {
+    color: #b3b3b3;
+}
+
+.ticker-percentage {
+    font-weight: normal;
 }
 
 .price-chart-wrapper {

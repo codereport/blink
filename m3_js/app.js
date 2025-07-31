@@ -202,12 +202,14 @@ class StockApp {
 
             // Generate ticker list HTML
             await this.generateTickerList();
+            this.updateTickerSelection();
 
         } catch (error) {
             console.error('Error loading available tickers:', error);
             // Fallback to hardcoded list if API fails
             this.availableTickers = ['NVDA', 'AAPL', 'AMZN', 'GOOG', 'META', 'MSFT', 'TSLA'];
             await this.generateTickerList();
+            this.updateTickerSelection();
         }
     }
 
@@ -228,11 +230,34 @@ class StockApp {
 
             // Get ticker display data including percentage for up-to-date stocks
             const displayData = await this.getTickerDisplayData(ticker);
-            tickerItem.textContent = displayData.displayText;
 
-            if (displayData.backgroundColor) {
-                tickerItem.style.backgroundColor = displayData.backgroundColor;
-                tickerItem.style.color = displayData.textColor;
+            // Create ticker name span
+            const tickerNameSpan = document.createElement('span');
+            tickerNameSpan.className = 'ticker-name';
+            tickerNameSpan.textContent = displayData.tickerText;
+
+            // Create percentage span if there's percentage data
+            const percentageSpan = document.createElement('span');
+            percentageSpan.className = 'ticker-percentage';
+
+            if (displayData.percentageText) {
+                percentageSpan.textContent = ` (${displayData.percentageText})`;
+                percentageSpan.style.color = displayData.percentageColor;
+            }
+
+            // Clear existing content and add spans
+            tickerItem.innerHTML = '';
+            tickerItem.appendChild(tickerNameSpan);
+            tickerItem.appendChild(percentageSpan);
+
+            // Apply border color for up-to-date stocks
+            if (displayData.borderColor) {
+                tickerItem.style.borderColor = displayData.borderColor;
+                tickerItem.style.borderWidth = '2px';
+            } else {
+                // Reset border for outdated stocks
+                tickerItem.style.borderColor = '#2a2a2a';
+                tickerItem.style.borderWidth = '1px';
             }
 
             return tickerItem;
@@ -256,9 +281,10 @@ class StockApp {
             // If data is not up to date, return just the ticker name
             if (!status.upToDate) {
                 return {
-                    displayText: ticker,
-                    backgroundColor: null,
-                    textColor: null,
+                    tickerText: ticker,
+                    percentageText: null,
+                    borderColor: null,
+                    percentageColor: null,
                     isUpToDate: false
                 };
             }
@@ -267,9 +293,10 @@ class StockApp {
             const dataResponse = await fetch(`/api/stock/${ticker.toUpperCase()}`);
             if (!dataResponse.ok) {
                 return {
-                    displayText: ticker,
-                    backgroundColor: null,
-                    textColor: null,
+                    tickerText: ticker,
+                    percentageText: null,
+                    borderColor: null,
+                    percentageColor: null,
                     isUpToDate: false
                 };
             }
@@ -277,9 +304,10 @@ class StockApp {
             const data = await dataResponse.json();
             if (!data || data.length === 0) {
                 return {
-                    displayText: ticker,
-                    backgroundColor: null,
-                    textColor: null,
+                    tickerText: ticker,
+                    percentageText: null,
+                    borderColor: null,
+                    percentageColor: null,
                     isUpToDate: false
                 };
             }
@@ -293,18 +321,20 @@ class StockApp {
             const changeText = `${changeSign}${latestChange.toFixed(2)}%`;
 
             return {
-                displayText: `${ticker} (${changeText})`,
-                backgroundColor: latestChange < 0 ? '#ff0000' : '#00ff00',
-                textColor: latestChange < 0 ? '#ffffff' : '#000000',
+                tickerText: ticker,
+                percentageText: changeText,
+                borderColor: latestChange < 0 ? '#ff0000' : '#00ff00',
+                percentageColor: latestChange < 0 ? '#ff0000' : '#00ff00',
                 isUpToDate: true
             };
 
         } catch (error) {
             console.error(`Error getting display data for ticker ${ticker}:`, error);
             return {
-                displayText: ticker,
-                backgroundColor: null,
-                textColor: null,
+                tickerText: ticker,
+                percentageText: null,
+                borderColor: null,
+                percentageColor: null,
                 isUpToDate: false
             };
         }
@@ -352,20 +382,46 @@ class StockApp {
             const ticker = item.dataset.ticker;
             const displayData = await this.getTickerDisplayData(ticker);
 
-            // Update text content with percentage if up to date
-            item.textContent = displayData.displayText;
+            // Update ticker structure with new data
+            const tickerNameSpan = item.querySelector('.ticker-name') || document.createElement('span');
+            const percentageSpan = item.querySelector('.ticker-percentage') || document.createElement('span');
 
-            if (displayData.backgroundColor) {
-                item.style.backgroundColor = displayData.backgroundColor;
-                item.style.color = displayData.textColor;
+            // Update ticker name
+            tickerNameSpan.className = 'ticker-name';
+            tickerNameSpan.textContent = displayData.tickerText;
+
+            // Update percentage
+            percentageSpan.className = 'ticker-percentage';
+            if (displayData.percentageText) {
+                percentageSpan.textContent = ` (${displayData.percentageText})`;
+                percentageSpan.style.color = displayData.percentageColor;
             } else {
-                // Remove background color and reset text color for outdated or unavailable data
-                item.style.backgroundColor = '';
-                item.style.color = '';
+                percentageSpan.textContent = '';
+                percentageSpan.style.color = '';
+            }
+
+            // Rebuild the item content if spans don't exist
+            if (!item.querySelector('.ticker-name')) {
+                item.innerHTML = '';
+                item.appendChild(tickerNameSpan);
+                item.appendChild(percentageSpan);
+            }
+
+            // Apply border styling
+            if (displayData.borderColor) {
+                item.style.borderColor = displayData.borderColor;
+                item.style.borderWidth = '2px';
+            } else {
+                // Reset border for outdated stocks
+                item.style.borderColor = '#2a2a2a';
+                item.style.borderWidth = '1px';
             }
         });
 
         await Promise.all(updatePromises);
+
+        // Update ticker selection to maintain active ticker styling
+        this.updateTickerSelection();
     }
 
     updateTickerSelection() {
@@ -378,8 +434,19 @@ class StockApp {
         // Update UI to show current selection
         document.querySelectorAll('.ticker-item').forEach(item => {
             item.classList.remove('active');
+            const tickerNameSpan = item.querySelector('.ticker-name');
+
             if (item.dataset.ticker === this.currentTicker) {
                 item.classList.add('active');
+                // Make current ticker text white
+                if (tickerNameSpan) {
+                    tickerNameSpan.style.color = 'white';
+                }
+            } else {
+                // Reset ticker text color to default gray
+                if (tickerNameSpan) {
+                    tickerNameSpan.style.color = '#b3b3b3';
+                }
             }
         });
     }
