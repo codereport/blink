@@ -191,33 +191,171 @@ class StockApp {
             }
 
             // Generate ticker list HTML
-            this.generateTickerList();
+            await this.generateTickerList();
 
         } catch (error) {
             console.error('Error loading available tickers:', error);
             // Fallback to hardcoded list if API fails
             this.availableTickers = ['NVDA', 'AAPL', 'AMZN', 'GOOG', 'META', 'MSFT', 'TSLA'];
-            this.generateTickerList();
+            await this.generateTickerList();
         }
     }
 
-    generateTickerList() {
+    async generateTickerList() {
         const tickerListContainer = document.querySelector('.ticker-list');
         tickerListContainer.innerHTML = '';
 
-        this.availableTickers.forEach(ticker => {
+        // Process all tickers in parallel for better performance
+        const tickerPromises = this.availableTickers.map(async (ticker) => {
             const tickerItem = document.createElement('div');
             tickerItem.className = 'ticker-item';
             tickerItem.dataset.ticker = ticker;
-            tickerItem.textContent = ticker;
 
             // Add click handler
             tickerItem.addEventListener('click', () => {
                 this.selectTicker(ticker);
             });
 
-            tickerListContainer.appendChild(tickerItem);
+            // Get ticker display data including percentage for up-to-date stocks
+            const displayData = await this.getTickerDisplayData(ticker);
+            tickerItem.textContent = displayData.displayText;
+
+            if (displayData.backgroundColor) {
+                tickerItem.style.backgroundColor = displayData.backgroundColor;
+                tickerItem.style.color = displayData.textColor;
+            }
+
+            return tickerItem;
         });
+
+        // Wait for all ticker items to be processed
+        const tickerItems = await Promise.all(tickerPromises);
+
+        // Append all ticker items to the container
+        tickerItems.forEach(item => {
+            tickerListContainer.appendChild(item);
+        });
+    }
+
+    async getTickerDisplayData(ticker) {
+        try {
+            // Check if data is up to date first
+            const statusResponse = await fetch(`/api/stock/${ticker.toUpperCase()}/status`);
+            const status = await statusResponse.json();
+
+            // If data is not up to date, return just the ticker name
+            if (!status.upToDate) {
+                return {
+                    displayText: ticker,
+                    backgroundColor: null,
+                    textColor: null,
+                    isUpToDate: false
+                };
+            }
+
+            // Get the latest stock data
+            const dataResponse = await fetch(`/api/stock/${ticker.toUpperCase()}`);
+            if (!dataResponse.ok) {
+                return {
+                    displayText: ticker,
+                    backgroundColor: null,
+                    textColor: null,
+                    isUpToDate: false
+                };
+            }
+
+            const data = await dataResponse.json();
+            if (!data || data.length === 0) {
+                return {
+                    displayText: ticker,
+                    backgroundColor: null,
+                    textColor: null,
+                    isUpToDate: false
+                };
+            }
+
+            // Calculate daily change for the most recent data point
+            const dailyChanges = calculateDailyChange(data);
+            const latestChange = dailyChanges[dailyChanges.length - 1] || 0;
+
+            // Format the percentage change
+            const changeSign = latestChange >= 0 ? '+' : '';
+            const changeText = `${changeSign}${latestChange.toFixed(2)}%`;
+
+            return {
+                displayText: `${ticker} (${changeText})`,
+                backgroundColor: latestChange < 0 ? '#ff0000' : '#00ff00',
+                textColor: latestChange < 0 ? '#ffffff' : '#000000',
+                isUpToDate: true
+            };
+
+        } catch (error) {
+            console.error(`Error getting display data for ticker ${ticker}:`, error);
+            return {
+                displayText: ticker,
+                backgroundColor: null,
+                textColor: null,
+                isUpToDate: false
+            };
+        }
+    }
+
+    async getTickerColor(ticker) {
+        try {
+            // Check if data is up to date first
+            const statusResponse = await fetch(`/api/stock/${ticker.toUpperCase()}/status`);
+            const status = await statusResponse.json();
+
+            // If data is not up to date, return null to leave unchanged
+            if (!status.upToDate) {
+                return null; // No coloring for outdated data
+            }
+
+            // Get the latest stock data
+            const dataResponse = await fetch(`/api/stock/${ticker.toUpperCase()}`);
+            if (!dataResponse.ok) {
+                return null; // No coloring if no data available
+            }
+
+            const data = await dataResponse.json();
+            if (!data || data.length === 0) {
+                return null; // No coloring if no data
+            }
+
+            // Calculate daily change for the most recent data point
+            const dailyChanges = calculateDailyChange(data);
+            const latestChange = dailyChanges[dailyChanges.length - 1] || 0;
+
+            // Return red background for negative change, green background for positive or zero change
+            return latestChange < 0 ? '#ff0000' : '#00ff00';
+
+        } catch (error) {
+            console.error(`Error getting color for ticker ${ticker}:`, error);
+            return null; // No coloring on error
+        }
+    }
+
+    async refreshTickerColors() {
+        // Update display text and background colors for all ticker items without regenerating the entire list
+        const tickerItems = document.querySelectorAll('.ticker-item');
+        const updatePromises = Array.from(tickerItems).map(async (item) => {
+            const ticker = item.dataset.ticker;
+            const displayData = await this.getTickerDisplayData(ticker);
+
+            // Update text content with percentage if up to date
+            item.textContent = displayData.displayText;
+
+            if (displayData.backgroundColor) {
+                item.style.backgroundColor = displayData.backgroundColor;
+                item.style.color = displayData.textColor;
+            } else {
+                // Remove background color and reset text color for outdated or unavailable data
+                item.style.backgroundColor = '';
+                item.style.color = '';
+            }
+        });
+
+        await Promise.all(updatePromises);
     }
 
     updateTickerSelection() {
@@ -1454,9 +1592,10 @@ class StockApp {
             this.isUpdating = false;
             updateButton.classList.remove('updating');
 
-            // Check status again to update button state
-            setTimeout(() => {
+            // Check status again to update button state and refresh ticker colors
+            setTimeout(async () => {
                 this.checkDataStatus(ticker);
+                await this.refreshTickerColors();
             }, 1000);
         }
     }
