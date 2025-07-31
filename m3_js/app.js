@@ -38,6 +38,9 @@ class StockApp {
         // Technical indicators toggle
         this.showTechnicalIndicators = true;
 
+        // Blue mode toggle (line chart vs candlesticks)
+        this.blueMode = false;
+
         this.init();
     }
 
@@ -109,6 +112,9 @@ class StockApp {
             } else if (e.key === 't' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.toggleTechnicalIndicators();
+            } else if (e.key === 'b' && e.target !== tickerInput) {
+                e.preventDefault();
+                this.toggleBlueMode();
             }
         });
     }
@@ -406,6 +412,11 @@ class StockApp {
 
         console.log('Creating price chart with', this.filteredData.length, 'data points');
 
+        // Check if blue mode is enabled - create simple blue line chart
+        if (this.blueMode) {
+            return this.createBlueLineChart(ctx);
+        }
+
         // Try simple candlestick approach first
         try {
             const canvas = document.getElementById('price-chart');
@@ -608,6 +619,75 @@ class StockApp {
         this.addChartEventListeners('price-chart', 'price');
     }
 
+    createBlueLineChart(ctx) {
+        // Clean up existing candlestick chart if it exists
+        if (this.simpleCandlesticks) {
+            this.simpleCandlesticks.removeMouseEvents();
+            this.simpleCandlesticks = null;
+        }
+
+        // Clean up existing Chart.js chart if it exists
+        if (this.priceChart) {
+            this.priceChart.destroy();
+            this.priceChart = null;
+        }
+
+        // Use pre-filtered trading days data for the line chart
+        const tradingDaysData = this.tradingDaysData;
+
+        console.log('Creating simple blue line chart with', tradingDaysData.length, 'data points');
+
+        const canvas = document.getElementById('price-chart');
+
+        // Get technical indicators if enabled
+        const indicators = this.getFilteredIndicators(tradingDaysData);
+
+        // Update existing chart or create new one
+        if (this.simpleLineChart && this.simpleLineChart.canvas === canvas) {
+            this.simpleLineChart.updateData(tradingDaysData, indicators);
+        } else {
+            // Clean up old chart if it exists
+            if (this.simpleLineChart) {
+                this.simpleLineChart.removeMouseEvents();
+            }
+            this.simpleLineChart = new SimpleLineChart(canvas, tradingDaysData);
+            this.simpleLineChart.draw(indicators);
+        }
+
+        // Create crosshair overlay for line chart
+        this.createCrosshairOverlay('price-chart');
+
+        // Setup mouse events with proper callbacks
+        this.simpleLineChart.setupMouseEvents(
+            (dataIndex, mouseX, mouseY) => {
+                // dataIndex is now the trading day index since we filtered the data
+                this.selectedTradingDayIndex = dataIndex;
+
+                // Find corresponding index in full filtered data for status bar
+                const tradingDay = tradingDaysData[dataIndex];
+                this.selectedDataPoint = this.filteredData.findIndex(d => d.timestamp === tradingDay.timestamp);
+
+                this.updateStatusBar();
+
+                // Draw crosshairs on overlays instead of redrawing charts
+                this.drawCandlestickCrosshair();
+                this.drawVolumeChartCrosshair();
+            },
+            () => {
+                // Clear selection on mouse leave
+                this.selectedDataPoint = null;
+                this.selectedTradingDayIndex = null;
+                this.updateStatusBar();
+
+                // Clear crosshairs on overlays
+                this.clearCandlestickCrosshair();
+                this.clearVolumeChartCrosshair();
+            }
+        );
+
+        console.log('Simple blue line chart created successfully with technical indicators and mouse tracking');
+    }
+
     createVolumeChart() {
         const canvas = document.getElementById('volume-chart');
 
@@ -627,10 +707,25 @@ class StockApp {
 
         // Update existing chart or create new one
         try {
+            // Define colors based on blue mode
+            const volumeColors = this.blueMode ? {
+                up: '#0080ff',
+                down: '#0080ff',
+                grid: 'rgba(255, 255, 255, 0.1)',
+                text: '#666666'
+            } : {
+                up: '#00ff00',
+                down: '#ff0000',
+                grid: 'rgba(255, 255, 255, 0.1)',
+                text: '#666666'
+            };
+
             if (this.simpleVolumeChart && this.simpleVolumeChart.canvas === canvas) {
+                // Update colors when blue mode changes
+                this.simpleVolumeChart.options.colors = volumeColors;
                 this.simpleVolumeChart.updateData(this.tradingDaysData);
             } else {
-                this.simpleVolumeChart = new SimpleVolumeChart(canvas, this.tradingDaysData);
+                this.simpleVolumeChart = new SimpleVolumeChart(canvas, this.tradingDaysData, { colors: volumeColors });
                 this.simpleVolumeChart.draw();
             }
 
@@ -795,17 +890,18 @@ class StockApp {
         // Clear previous crosshair
         ctx.clearRect(0, 0, overlay.width, overlay.height);
 
-        // Handle SimpleCandlestickChart
-        if (this.simpleCandlesticks) {
-            const chartArea = this.simpleCandlesticks.chartArea;
-            const xPosition = this.simpleCandlesticks.xPosition(this.selectedTradingDayIndex);
+        // Handle SimpleCandlestickChart or SimpleLineChart
+        if (this.simpleCandlesticks || this.simpleLineChart) {
+            const chart = this.simpleCandlesticks || this.simpleLineChart;
+            const chartArea = chart.chartArea;
+            const xPosition = chart.xPosition(this.selectedTradingDayIndex);
 
             // Get price data for horizontal crosshair
             const dataPoint = this.tradingDaysData[this.selectedTradingDayIndex];
             if (!dataPoint) return;
 
-            const { min, max } = this.simpleCandlesticks.getMinMax();
-            const closeY = this.simpleCandlesticks.yPosition(dataPoint.close, min, max);
+            const { min, max } = chart.getMinMax();
+            const closeY = chart.yPosition(dataPoint.close, min, max);
 
             ctx.save();
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
@@ -1133,6 +1229,69 @@ class StockApp {
         };
     }
 
+    getBlueLineChartOptions(priceRange) {
+        // Use the pre-calculated price range from SimpleCandlestickChart method
+        const minPrice = priceRange ? priceRange.min : undefined;
+        const maxPrice = priceRange ? priceRange.max : undefined;
+        const tradingDaysData = this.tradingDaysData;
+
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: {
+                padding: {
+                    left: 10,   // Reduced padding to remove extra space
+                    right: 20,
+                    top: 20,
+                    bottom: 10
+                }
+            },
+            interaction: {
+                intersect: false,
+                mode: 'index'
+            },
+            scales: {
+                x: {
+                    type: 'linear',
+                    min: 0,
+                    max: Math.max(0, tradingDaysData.length - 1),
+                    grid: {
+                        display: false
+                    },
+                    ticks: {
+                        display: false
+                    }
+                },
+                y: {
+                    min: minPrice,
+                    max: maxPrice,
+                    grid: {
+                        color: 'rgba(255, 255, 255, 0.05)'
+                    },
+                    ticks: {
+                        color: '#666666'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    enabled: false
+                }
+            },
+            elements: {
+                point: {
+                    radius: 0
+                }
+            },
+            animation: {
+                duration: 0
+            }
+        };
+    }
+
     getVolumeChartOptions() {
         return {
             responsive: true,
@@ -1315,6 +1474,20 @@ class StockApp {
             this.updateStatusBar();
         }, 2000);
     }
+
+    toggleBlueMode() {
+        this.blueMode = !this.blueMode;
+        this.updateCharts();
+
+        // Provide user feedback
+        const status = this.blueMode ? 'enabled' : 'disabled';
+        this.updateStatusBar(`Blue mode ${status}`);
+
+        // Clear the status message after 2 seconds, reverting to normal display
+        setTimeout(() => {
+            this.updateStatusBar();
+        }, 2000);
+    }
 }
 
 // Simple Volume Chart class that matches SimpleCandlestickChart positioning
@@ -1487,6 +1660,247 @@ class SimpleVolumeChart {
         this.calculateDimensions();
         this.calculateBarWidth();
         this.draw();
+    }
+}
+
+// Simple Line Chart class that matches SimpleCandlestickChart positioning
+class SimpleLineChart {
+    constructor(canvas, data, options = {}) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.data = data;
+        this.options = {
+            padding: { top: 20, bottom: 60, left: 60, right: 20 },
+            colors: {
+                line: '#0080ff',
+                grid: 'rgba(255, 255, 255, 0.1)',
+                text: '#666666'
+            },
+            ...options
+        };
+
+        this.setupCanvas();
+        this.calculateDimensions();
+    }
+
+    setupCanvas() {
+        // Set canvas size to match container
+        const rect = this.canvas.getBoundingClientRect();
+        this.canvas.width = rect.width * window.devicePixelRatio;
+        this.canvas.height = rect.height * window.devicePixelRatio;
+        this.ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        this.canvas.style.width = rect.width + 'px';
+        this.canvas.style.height = rect.height + 'px';
+    }
+
+    calculateDimensions() {
+        const rect = this.canvas.getBoundingClientRect();
+        this.chartArea = {
+            left: this.options.padding.left,
+            top: this.options.padding.top,
+            right: rect.width - this.options.padding.right,
+            bottom: rect.height - this.options.padding.bottom
+        };
+        this.chartArea.width = this.chartArea.right - this.chartArea.left;
+        this.chartArea.height = this.chartArea.bottom - this.chartArea.top;
+    }
+
+    getMinMax() {
+        let min = Infinity;
+        let max = -Infinity;
+
+        this.data.forEach(d => {
+            min = Math.min(min, d.low);
+            max = Math.max(max, d.high);
+        });
+
+        // Add 5% padding (same as SimpleCandlestickChart)
+        const padding = (max - min) * 0.05;
+        return { min: min - padding, max: max + padding };
+    }
+
+    xPosition(index) {
+        const spacing = this.chartArea.width / (this.data.length - 1);
+        return this.chartArea.left + (index * spacing);
+    }
+
+    yPosition(price, min, max) {
+        const ratio = (price - min) / (max - min);
+        return this.chartArea.bottom - (ratio * this.chartArea.height);
+    }
+
+    drawGrid(min, max) {
+        this.ctx.strokeStyle = this.options.colors.grid;
+        this.ctx.lineWidth = 1;
+
+        // Horizontal grid lines (match SimpleCandlestickChart exactly)
+        const steps = 5;
+        for (let i = 0; i <= steps; i++) {
+            const price = min + ((max - min) * i / steps);
+            const y = this.yPosition(price, min, max);
+
+            this.ctx.beginPath();
+            this.ctx.moveTo(this.chartArea.left, y);
+            this.ctx.lineTo(this.chartArea.right, y);
+            this.ctx.stroke();
+
+            // Price labels
+            this.ctx.fillStyle = this.options.colors.text;
+            this.ctx.font = '12px monospace';
+            this.ctx.textAlign = 'right';
+            this.ctx.fillText(price.toFixed(2), this.chartArea.left - 10, y + 4);
+        }
+    }
+
+    drawLine() {
+        if (this.data.length < 2) return;
+
+        const { min, max } = this.getMinMax();
+
+        this.ctx.strokeStyle = this.options.colors.line;
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+
+        // Start the line at the first data point
+        const firstX = this.xPosition(0);
+        const firstY = this.yPosition(this.data[0].close, min, max);
+        this.ctx.moveTo(firstX, firstY);
+
+        // Draw line to each subsequent point
+        for (let i = 1; i < this.data.length; i++) {
+            const x = this.xPosition(i);
+            const y = this.yPosition(this.data[i].close, min, max);
+            this.ctx.lineTo(x, y);
+        }
+
+        this.ctx.stroke();
+    }
+
+    drawTechnicalIndicators(indicators) {
+        if (!indicators) return;
+
+        const { min, max } = this.getMinMax();
+
+        // Draw SMA lines
+        this.drawIndicatorLine(indicators.sma10, 'rgba(255, 255, 255, 0.4)', 1, min, max);
+        this.drawIndicatorLine(indicators.sma20, 'rgba(255, 0, 255, 0.4)', 1, min, max);
+        this.drawIndicatorLine(indicators.sma50, 'rgba(138, 43, 226, 0.4)', 1, min, max);
+
+        // Draw Bollinger Bands
+        this.drawIndicatorLine(indicators.bollingerBands.upper, 'rgba(255, 255, 0, 0.4)', 1, min, max, [5, 5]);
+        this.drawIndicatorLine(indicators.bollingerBands.lower, 'rgba(255, 255, 0, 0.4)', 1, min, max, [5, 5]);
+    }
+
+    drawIndicatorLine(points, color, lineWidth, min, max, dash = []) {
+        if (!points || points.length < 2) return;
+
+        this.ctx.strokeStyle = color;
+        this.ctx.lineWidth = lineWidth;
+        this.ctx.setLineDash(dash);
+
+        this.ctx.beginPath();
+
+        // Find the first valid point
+        let startIndex = -1;
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i];
+            const dataIndex = this.data.findIndex(d => d.timestamp === point.x);
+            if (dataIndex !== -1) {
+                const x = this.xPosition(dataIndex);
+                const y = this.yPosition(point.y, min, max);
+                this.ctx.moveTo(x, y);
+                startIndex = i + 1;
+                break;
+            }
+        }
+
+        // Draw lines to subsequent points
+        for (let i = startIndex; i < points.length; i++) {
+            const point = points[i];
+            const dataIndex = this.data.findIndex(d => d.timestamp === point.x);
+            if (dataIndex !== -1) {
+                const x = this.xPosition(dataIndex);
+                const y = this.yPosition(point.y, min, max);
+                this.ctx.lineTo(x, y);
+            }
+        }
+
+        this.ctx.stroke();
+        this.ctx.setLineDash([]); // Reset dash
+    }
+
+    draw(indicators) {
+        // Clear canvas
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        if (this.data.length === 0) return;
+
+        const { min, max } = this.getMinMax();
+
+        // Draw grid
+        this.drawGrid(min, max);
+
+        // Draw technical indicators first (behind the main line)
+        if (indicators) {
+            this.drawTechnicalIndicators(indicators);
+        }
+
+        // Draw main blue line
+        this.drawLine();
+
+        console.log(`Drew blue line with ${this.data.length} data points`);
+    }
+
+    updateData(newData, indicators) {
+        this.data = newData;
+        this.setupCanvas();
+        this.calculateDimensions();
+        this.draw(indicators);
+    }
+
+    setupMouseEvents(onHover, onLeave) {
+        this.onHover = onHover;
+        this.onLeave = onLeave;
+
+        this.mouseEventHandlers = {
+            mousemove: (e) => this.handleMouseMove(e),
+            mouseleave: (e) => this.handleMouseLeave(e)
+        };
+
+        this.canvas.addEventListener('mousemove', this.mouseEventHandlers.mousemove);
+        this.canvas.addEventListener('mouseleave', this.mouseEventHandlers.mouseleave);
+    }
+
+    removeMouseEvents() {
+        if (this.mouseEventHandlers) {
+            this.canvas.removeEventListener('mousemove', this.mouseEventHandlers.mousemove);
+            this.canvas.removeEventListener('mouseleave', this.mouseEventHandlers.mouseleave);
+        }
+    }
+
+    handleMouseMove(event) {
+        const rect = this.canvas.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+
+        if (x >= this.chartArea.left && x <= this.chartArea.right &&
+            y >= this.chartArea.top && y <= this.chartArea.bottom) {
+
+            // Calculate which data point we're closest to
+            const relativeX = x - this.chartArea.left;
+            const dataIndex = Math.round((relativeX / this.chartArea.width) * (this.data.length - 1));
+            const clampedIndex = Math.max(0, Math.min(dataIndex, this.data.length - 1));
+
+            if (this.onHover) {
+                this.onHover(clampedIndex, x, y);
+            }
+        }
+    }
+
+    handleMouseLeave(event) {
+        if (this.onLeave) {
+            this.onLeave();
+        }
     }
 }
 
