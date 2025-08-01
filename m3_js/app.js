@@ -320,11 +320,15 @@ class StockApp {
             const changeSign = latestChange >= 0 ? '+' : '';
             const changeText = `${changeSign}${latestChange.toFixed(2)}%`;
 
+            // Use blue colors in blue mode, otherwise red/green
+            const negativeColor = this.blueMode ? '#007acc' : '#ff0000';
+            const positiveColor = this.blueMode ? '#007acc' : '#00ff00';
+
             return {
                 tickerText: ticker,
                 percentageText: changeText,
-                borderColor: latestChange < 0 ? '#ff0000' : '#00ff00',
-                percentageColor: latestChange < 0 ? '#ff0000' : '#00ff00',
+                borderColor: latestChange < 0 ? negativeColor : positiveColor,
+                percentageColor: latestChange < 0 ? negativeColor : positiveColor,
                 isUpToDate: true
             };
 
@@ -366,8 +370,10 @@ class StockApp {
             const dailyChanges = calculateDailyChange(data);
             const latestChange = dailyChanges[dailyChanges.length - 1] || 0;
 
-            // Return red background for negative change, green background for positive or zero change
-            return latestChange < 0 ? '#ff0000' : '#00ff00';
+            // Return appropriate color for negative/positive change, considering blue mode
+            const negativeColor = this.blueMode ? '#007acc' : '#ff0000';
+            const positiveColor = this.blueMode ? '#007acc' : '#00ff00';
+            return latestChange < 0 ? negativeColor : positiveColor;
 
         } catch (error) {
             console.error(`Error getting color for ticker ${ticker}:`, error);
@@ -1330,8 +1336,13 @@ class StockApp {
             // Format daily change with sign for consistency and determine color
             const changeSign = dailyChange >= 0 ? '+' : '';
             const changeText = `${changeSign}${dailyChange.toFixed(2)}%`;
-            const changeColor = dailyChange >= 0 ? '#00ff00' : '#ff0000';
-            const closeColor = dailyChange >= 0 ? '#00ff00' : '#ff0000';
+
+            // Use blue colors in blue mode, otherwise red/green
+            const positiveStatusColor = this.blueMode ? '#007acc' : '#00ff00';
+            const negativeStatusColor = this.blueMode ? '#007acc' : '#ff0000';
+
+            const changeColor = dailyChange >= 0 ? positiveStatusColor : negativeStatusColor;
+            const closeColor = dailyChange >= 0 ? positiveStatusColor : negativeStatusColor;
 
             // Show volume as "No Trading" if it's zero (weekend/holiday)
             const volumeDisplay = dataPoint.volume === 0 ? 'No Trading' : this.formatVolumeNumber(dataPoint.volume);
@@ -1779,6 +1790,9 @@ class StockApp {
         this.blueMode = !this.blueMode;
         this.updateCharts();
 
+        // Instantly update ticker colors for blue mode without async operations
+        this.updateTickerColorsForBlueMode();
+
         // Provide user feedback
         const status = this.blueMode ? 'enabled' : 'disabled';
         this.updateStatusBar(`Blue mode ${status}`);
@@ -1787,6 +1801,38 @@ class StockApp {
         setTimeout(() => {
             this.updateStatusBar();
         }, 2000);
+    }
+
+    updateTickerColorsForBlueMode() {
+        // Synchronously update ticker colors for blue mode - no API calls needed
+        const tickerItems = document.querySelectorAll('.ticker-item');
+
+        tickerItems.forEach(item => {
+            const percentageSpan = item.querySelector('.ticker-percentage');
+
+            if (percentageSpan && percentageSpan.textContent) {
+                // Check if this ticker has percentage data (indicating it's up to date)
+                const hasPercentage = percentageSpan.textContent.includes('%');
+
+                if (hasPercentage) {
+                    // Extract the percentage text to determine if positive or negative
+                    const percentageText = percentageSpan.textContent;
+                    const isNegative = percentageText.includes('-');
+
+                    // Apply blue mode colors
+                    const negativeColor = this.blueMode ? '#007acc' : '#ff0000';
+                    const positiveColor = this.blueMode ? '#007acc' : '#00ff00';
+                    const borderColor = isNegative ? negativeColor : positiveColor;
+
+                    // Update percentage color
+                    percentageSpan.style.color = borderColor;
+
+                    // Update border color
+                    item.style.borderColor = borderColor;
+                    item.style.borderWidth = '2px';
+                }
+            }
+        });
     }
 }
 
