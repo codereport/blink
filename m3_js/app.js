@@ -4,6 +4,7 @@
 // 2. Update charts instead of recreating them when possible  
 // 3. Debounce time window changes to prevent rapid switching issues
 // 4. Optimized SMA and Bollinger Bands calculations with sliding window approach
+// 5. Weekly aggregation for 5-year view to reduce ~1250 daily bars to ~260 weekly bars
 class StockApp {
     constructor() {
         this.stockData = [];
@@ -675,6 +676,14 @@ class StockApp {
             // Use standard time window
             filteredTradingDays = filterDataByTimeWindow(this.cachedTradingDaysData, this.currentTimeWindow);
         }
+
+        // For 5-year view, aggregate to weekly data for better performance
+        if (this.currentTimeWindow === '5y' && !this.isCustomZoomActive) {
+            filteredTradingDays = aggregateToWeeklyData(filteredTradingDays);
+            this.filteredData = aggregateToWeeklyData(this.filteredData);
+            console.log('Applied weekly aggregation for 5-year view to improve performance');
+        }
+
         this.tradingDaysData = filteredTradingDays;
 
         this.createPriceChart();
@@ -685,7 +694,23 @@ class StockApp {
     }
 
     getFilteredIndicators(tradingDaysData) {
-        if (!this.showTechnicalIndicators || !this.cachedIndicators || !tradingDaysData || tradingDaysData.length === 0) {
+        if (!this.showTechnicalIndicators || !tradingDaysData || tradingDaysData.length === 0) {
+            return {
+                sma10: [],
+                sma20: [],
+                sma50: [],
+                bollingerBands: { upper: [], middle: [], lower: [] }
+            };
+        }
+
+        // For 5-year view with weekly data, recalculate indicators from weekly data
+        if (this.currentTimeWindow === '5y' && !this.isCustomZoomActive) {
+            console.log('Calculating technical indicators for weekly aggregated data');
+            return prepareIndicatorDatasets(tradingDaysData);
+        }
+
+        // For other time windows, use cached indicators filtered by timestamps
+        if (!this.cachedIndicators) {
             return {
                 sma10: [],
                 sma20: [],

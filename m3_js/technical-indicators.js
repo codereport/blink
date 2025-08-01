@@ -214,4 +214,73 @@ function prepareIndicatorDatasets(data) {
             })).filter(point => point.y !== null)
         }
     };
+}
+
+/**
+ * Aggregate daily OHLC data into weekly data
+ * @param {Array} data - Array of daily stock data objects
+ * @returns {Array} Array of weekly aggregated data
+ */
+function aggregateToWeeklyData(data) {
+    if (!data || data.length === 0) return [];
+
+    // Group data by week (Monday to Friday)
+    const weeklyGroups = new Map();
+    
+    data.forEach(day => {
+        const date = new Date(day.timestamp);
+        
+        // Find the Monday of this week (week start)
+        const monday = new Date(date);
+        const dayOfWeek = monday.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // If Sunday, go back 6 days
+        monday.setDate(monday.getDate() + daysToMonday);
+        monday.setHours(0, 0, 0, 0);
+        
+        const weekKey = monday.toISOString();
+        
+        if (!weeklyGroups.has(weekKey)) {
+            weeklyGroups.set(weekKey, []);
+        }
+        weeklyGroups.get(weekKey).push(day);
+    });
+
+    // Convert groups to weekly OHLC data
+    const weeklyData = [];
+    
+    for (const [weekStart, weekDays] of weeklyGroups.entries()) {
+        if (weekDays.length === 0) continue;
+        
+        // Sort days by date to ensure proper order
+        weekDays.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        
+        const firstDay = weekDays[0];
+        const lastDay = weekDays[weekDays.length - 1];
+        
+        // Weekly OHLC calculation:
+        // Open: first day's open
+        // High: highest high of the week
+        // Low: lowest low of the week
+        // Close: last day's close
+        // Volume: sum of all volumes
+        // Timestamp: use Friday's date (or last trading day of week)
+        
+        const weeklyBar = {
+            timestamp: lastDay.timestamp, // Use last trading day of week
+            open: firstDay.open,
+            high: Math.max(...weekDays.map(d => d.high)),
+            low: Math.min(...weekDays.map(d => d.low)),
+            close: lastDay.close,
+            volume: weekDays.reduce((sum, d) => sum + d.volume, 0)
+        };
+        
+        weeklyData.push(weeklyBar);
+    }
+    
+    // Sort by timestamp to ensure chronological order
+    weeklyData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    
+    console.log(`Aggregated ${data.length} daily bars into ${weeklyData.length} weekly bars`);
+    
+    return weeklyData;
 } 
