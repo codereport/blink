@@ -1775,15 +1775,6 @@ class StockApp {
     toggleTechnicalIndicators() {
         this.showTechnicalIndicators = !this.showTechnicalIndicators;
         this.updateCharts();
-
-        // Provide user feedback
-        const status = this.showTechnicalIndicators ? 'enabled' : 'disabled';
-        this.updateStatusBar(`Technical indicators ${status}`);
-
-        // Clear the status message after 2 seconds, reverting to normal display
-        setTimeout(() => {
-            this.updateStatusBar();
-        }, 2000);
     }
 
     toggleBlueMode() {
@@ -1792,15 +1783,6 @@ class StockApp {
 
         // Instantly update ticker colors for blue mode without async operations
         this.updateTickerColorsForBlueMode();
-
-        // Provide user feedback
-        const status = this.blueMode ? 'enabled' : 'disabled';
-        this.updateStatusBar(`Blue mode ${status}`);
-
-        // Clear the status message after 2 seconds, reverting to normal display
-        setTimeout(() => {
-            this.updateStatusBar();
-        }, 2000);
     }
 
     updateTickerColorsForBlueMode() {
