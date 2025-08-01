@@ -150,9 +150,9 @@ class StockApp {
             } else if (e.key === 'h' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.toggleHelpPopup();
-            } else if (e.key === 'z' && e.target !== tickerInput) {
+            } else if (e.key === 'f' && e.target !== tickerInput) {
                 e.preventDefault();
-                this.resetZoom();
+                this.toggleFullscreen();
             } else if (e.key === 'Escape') {
                 e.preventDefault();
                 if (this.isHelpVisible) {
