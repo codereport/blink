@@ -1409,6 +1409,12 @@ class StockApp {
             const changeColor = dailyChange >= 0 ? positiveStatusColor : negativeStatusColor;
             const closeColor = dailyChange >= 0 ? positiveStatusColor : negativeStatusColor;
 
+            // Calculate time window percentage gain/loss
+            const timeWindowChange = this.calculateTimeWindowChange();
+            const timeWindowSign = timeWindowChange >= 0 ? '+' : '';
+            const timeWindowText = `${timeWindowSign}${timeWindowChange.toFixed(2)}%`;
+            const timeWindowColor = timeWindowChange >= 0 ? positiveStatusColor : negativeStatusColor;
+
             // Show volume as "No Trading" if it's zero (weekend/holiday)
             const volumeDisplay = dataPoint.volume === 0 ? 'No Trading' : this.formatVolumeNumber(dataPoint.volume);
 
@@ -1418,6 +1424,7 @@ class StockApp {
             statusText.innerHTML =
                 `Date: ${date} | ` +
                 `Daily % Gain/Loss: <span style="color: ${changeColor}; font-weight: bold">${changeText.padStart(7)}</span> | ` +
+                `${this.getTimeWindowLabel()} Total: <span style="color: ${timeWindowColor}; font-weight: bold">${timeWindowText.padStart(7)}</span> | ` +
                 `Volume: ${volumeDisplay.padStart(6)} | ` +
                 `Open: ${dataPoint.open.toFixed(2).padStart(6)} | ` +
                 `High: ${dataPoint.high.toFixed(2).padStart(6)} | ` +
@@ -1428,6 +1435,27 @@ class StockApp {
             statusText.classList.remove('status-dimmed');
             statusText.textContent = 'no info';
         }
+    }
+
+    calculateTimeWindowChange() {
+        if (!this.filteredData || this.filteredData.length < 2) {
+            return 0;
+        }
+
+        const firstPrice = this.filteredData[0].close;
+        const lastPrice = this.filteredData[this.filteredData.length - 1].close;
+
+        return ((lastPrice - firstPrice) / firstPrice) * 100;
+    }
+
+    getTimeWindowLabel() {
+        const labels = {
+            '3m': '3M',
+            '6m': '6M',
+            '1y': '1Y',
+            '5y': '5Y'
+        };
+        return labels[this.currentTimeWindow] || this.currentTimeWindow.toUpperCase();
     }
 
     toggleFullscreen() {
