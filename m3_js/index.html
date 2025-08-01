@@ -49,12 +49,58 @@
             </span>
         </div>
 
-        <div class="controls-info">
-            <p>Controls: F11 - Fullscreen | Spacebar - New Ticker |
-                Ctrl+Enter - Update Data | Ctrl+Shift+Enter - Update All | T - Toggle Indicators | B - Blue Mode | M -
-                Market Overlay (SPY) | Mouse - Crosshairs | ↑↓ - Navigate Tickers | <strong>Click Zoom</strong> - Click
-                twice on chart to zoom | Z - Reset Zoom | Esc - Cancel Selection
-            </p>
+    </div>
+
+    <!-- Help Popup -->
+    <div id="help-popup" class="help-popup hidden">
+        <div class="help-content">
+            <div class="help-header">
+                <h3>📊 M3 Technical Stock Analysis - Controls</h3>
+                <span class="help-close">&times;</span>
+            </div>
+            <div class="help-body">
+                <div class="help-column">
+                    <div class="help-section">
+                        <h4>⌨️ Keyboard Shortcuts</h4>
+                        <div class="help-grid">
+                            <div class="shortcut"><kbd>F11</kbd><span>Toggle Fullscreen</span></div>
+                            <div class="shortcut"><kbd>Space</kbd><span>New Ticker Input</span></div>
+                            <div class="shortcut"><kbd>H</kbd><span>Toggle This Help</span></div>
+                            <div class="shortcut"><kbd>T</kbd><span>Toggle Technical Indicators</span></div>
+                            <div class="shortcut"><kbd>B</kbd><span>Toggle Blue Line Mode</span></div>
+                            <div class="shortcut"><kbd>M</kbd><span>Toggle Market Overlay (SPY)</span></div>
+                            <div class="shortcut"><kbd>Z</kbd><span>Reset Zoom</span></div>
+                            <div class="shortcut"><kbd>Esc</kbd><span>Cancel Zoom Selection</span></div>
+                            <div class="shortcut"><kbd>1-4</kbd><span>Time Windows (3M, 6M, 1Y, 5Y)</span></div>
+                            <div class="shortcut"><kbd>↑↓</kbd><span>Navigate Ticker List</span></div>
+                            <div class="shortcut"><kbd>Ctrl+Enter</kbd><span>Update Current Ticker Data</span></div>
+                            <div class="shortcut"><kbd>Ctrl+Shift+Enter</kbd><span>Update All Ticker Data</span></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="help-column">
+                    <div class="help-section">
+                        <h4>🖱️ Mouse Controls</h4>
+                        <div class="help-grid">
+                            <div class="shortcut"><span>Mouse Move</span><span>Show crosshairs and data</span></div>
+                            <div class="shortcut"><span>First Click</span><span>Start zoom range selection</span></div>
+                            <div class="shortcut"><span>Second Click</span><span>Complete zoom to selected range</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="help-section">
+                        <h4>📈 Chart Features</h4>
+                        <ul>
+                            <li><strong>Click Zoom:</strong> Click twice on chart to zoom into a specific time range
+                            </li>
+                            <li><strong>Technical Indicators:</strong> SMA (10, 20, 50), Bollinger Bands</li>
+                            <li><strong>Market Overlay:</strong> Compare with SPY performance</li>
+                            <li><strong>Real-time Crosshairs:</strong> Hover to see precise values</li>
+                            <li><strong>Volume Chart:</strong> Trading volume visualization</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 

@@ -56,11 +56,15 @@ class StockApp {
         this.isCustomZoomActive = false;
         this.zoomOverlay = null;
 
+        // Help popup state
+        this.isHelpVisible = false;
+
         this.init();
     }
 
     async init() {
         this.setupEventListeners();
+        this.setupHelpPopup(); // Setup help popup event listeners
         await this.loadAvailableTickers(); // Load tickers dynamically first
         this.updateTickerSelection(); // Initialize ticker selection UI
         this.loadData(this.currentTicker);
@@ -143,12 +147,18 @@ class StockApp {
             } else if (e.key === 'm' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.toggleMarketOverlay();
+            } else if (e.key === 'h' && e.target !== tickerInput) {
+                e.preventDefault();
+                this.toggleHelpPopup();
             } else if (e.key === 'z' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.resetZoom();
             } else if (e.key === 'Escape') {
                 e.preventDefault();
-                if (this.isZoomSelecting) {
+                if (this.isHelpVisible) {
+                    // Close help popup if open
+                    this.hideHelpPopup();
+                } else if (this.isZoomSelecting) {
                     // Cancel zoom selection
                     this.isZoomSelecting = false;
                     this.zoomStartIndex = null;
@@ -161,6 +171,62 @@ class StockApp {
                 }
             }
         });
+    }
+
+    setupHelpPopup() {
+        // Setup close button handler
+        const helpCloseBtn = document.querySelector('.help-close');
+        if (helpCloseBtn) {
+            helpCloseBtn.addEventListener('click', () => {
+                this.hideHelpPopup();
+            });
+        }
+
+        // Setup backdrop click to close
+        const helpPopup = document.getElementById('help-popup');
+        if (helpPopup) {
+            helpPopup.addEventListener('click', (e) => {
+                if (e.target === helpPopup) {
+                    this.hideHelpPopup();
+                }
+            });
+        }
+
+        // Prevent clicks inside popup from closing it
+        const helpContent = document.querySelector('.help-content');
+        if (helpContent) {
+            helpContent.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
+        }
+    }
+
+    toggleHelpPopup() {
+        if (this.isHelpVisible) {
+            this.hideHelpPopup();
+        } else {
+            this.showHelpPopup();
+        }
+    }
+
+    showHelpPopup() {
+        const helpPopup = document.getElementById('help-popup');
+        if (helpPopup) {
+            helpPopup.classList.remove('hidden');
+            this.isHelpVisible = true;
+            // Prevent body scrolling when popup is open
+            document.body.style.overflow = 'hidden';
+        }
+    }
+
+    hideHelpPopup() {
+        const helpPopup = document.getElementById('help-popup');
+        if (helpPopup) {
+            helpPopup.classList.add('hidden');
+            this.isHelpVisible = false;
+            // Restore body scrolling
+            document.body.style.overflow = '';
+        }
     }
 
     async loadData(ticker) {
