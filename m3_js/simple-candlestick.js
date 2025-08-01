@@ -74,7 +74,7 @@ class SimpleCandlestickChart {
         this.options.candleWidth = Math.round(calculatedWidth * 2) / 2;
     }
 
-    getMinMax() {
+    getMinMax(spyOverlayData = null) {
         let min = Infinity;
         let max = -Infinity;
 
@@ -82,6 +82,14 @@ class SimpleCandlestickChart {
             min = Math.min(min, d.low);
             max = Math.max(max, d.high);
         });
+
+        // Include SPY overlay data in min/max calculation
+        if (spyOverlayData) {
+            spyOverlayData.forEach(point => {
+                min = Math.min(min, point.y);
+                max = Math.max(max, point.y);
+            });
+        }
 
         // Add 5% padding
         const padding = (max - min) * 0.05;
@@ -286,9 +294,31 @@ class SimpleCandlestickChart {
         }
     }
 
+    drawSpyOverlay(spyOverlayData, min, max) {
+        if (!spyOverlayData || spyOverlayData.length === 0) return;
+
+        this.ctx.beginPath();
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'; // White color
+        this.ctx.lineWidth = 2;
+        // Solid line (no setLineDash)
+
+        spyOverlayData.forEach((point, index) => {
+            const x = this.xPosition(point.x);
+            const y = this.yPosition(point.y, min, max);
+
+            if (index === 0) {
+                this.ctx.moveTo(x, y);
+            } else {
+                this.ctx.lineTo(x, y);
+            }
+        });
+
+        this.ctx.stroke();
+    }
 
 
-    draw(indicators = null) {
+
+    draw(indicators = null, spyOverlayData = null) {
         // Store indicators for redrawing
         this.lastIndicators = indicators;
 
@@ -297,7 +327,7 @@ class SimpleCandlestickChart {
 
         if (this.data.length === 0) return;
 
-        const { min, max } = this.getMinMax();
+        const { min, max } = this.getMinMax(spyOverlayData);
 
         // Draw grid
         this.drawGrid(min, max);
@@ -305,6 +335,11 @@ class SimpleCandlestickChart {
         // Draw technical indicators first (behind candlesticks)
         if (indicators) {
             this.drawTechnicalIndicators(indicators);
+        }
+
+        // Draw SPY overlay line if provided
+        if (spyOverlayData) {
+            this.drawSpyOverlay(spyOverlayData, min, max);
         }
 
         // Draw candlesticks on top
@@ -318,12 +353,12 @@ class SimpleCandlestickChart {
         console.log(`Drew ${this.data.length} candlesticks with technical indicators`);
     }
 
-    updateData(newData, indicators = null) {
+    updateData(newData, indicators = null, spyOverlayData = null) {
         this.data = newData;
         // Recalculate dimensions in case container size changed
         this.setupCanvas();
         this.calculateDimensions();
         this.calculateCandleWidth();
-        this.draw(indicators);
+        this.draw(indicators, spyOverlayData);
     }
 } 

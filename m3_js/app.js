@@ -42,6 +42,11 @@ class StockApp {
         // Blue mode toggle (line chart vs candlesticks)
         this.blueMode = false;
 
+        // Market overlay toggle (SPY comparison)
+        this.showMarketOverlay = false;
+        this.spyData = [];
+        this.spyFilteredData = [];
+
         this.init();
     }
 
@@ -51,6 +56,7 @@ class StockApp {
         this.updateTickerSelection(); // Initialize ticker selection UI
         this.loadData(this.currentTicker);
         this.checkDataStatus(this.currentTicker);
+        await this.loadSpyData(); // Load SPY data for market overlay
     }
 
     setupEventListeners() {
@@ -125,6 +131,9 @@ class StockApp {
             } else if (e.key === 'b' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.toggleBlueMode();
+            } else if (e.key === 'm' && e.target !== tickerInput) {
+                e.preventDefault();
+                this.toggleMarketOverlay();
             }
         });
     }
@@ -161,6 +170,29 @@ class StockApp {
             this.updateCharts();
             this.updateStatusBar('Error loading data: ' + error.message);
         }
+    }
+
+    async loadSpyData() {
+        try {
+            const response = await fetch('/api/stock/SPY');
+            if (!response.ok) {
+                throw new Error('SPY data not found');
+            }
+            const data = await response.json();
+            this.spyData = data;
+            this.filterSpyData();
+        } catch (error) {
+            console.error('Error loading SPY data:', error);
+            this.spyData = [];
+            this.spyFilteredData = [];
+        }
+    }
+
+    filterSpyData() {
+        if (!this.spyData.length) return;
+
+        // Apply the same time window filter as the main stock data
+        this.spyFilteredData = filterDataByTimeWindow(this.spyData, this.currentTimeWindow);
     }
 
     selectTicker(ticker) {
@@ -494,6 +526,9 @@ class StockApp {
         // Performance optimization: filter data first
         this.filteredData = filterDataByTimeWindow(this.stockData, this.currentTimeWindow);
 
+        // Also filter SPY data for market overlay
+        this.filterSpyData();
+
         // Cache trading days data and indicators if not already cached or data changed
         if (!this.cachedTradingDaysData || this.stockData.length !== this.lastDataLength) {
             this.cachedTradingDaysData = this.stockData.filter(d => d.volume > 0);
@@ -655,16 +690,22 @@ class StockApp {
                 bollingerUpperCount: indicators.bollingerBands.upper.length
             });
 
+            // Prepare SPY overlay data if enabled
+            let spyOverlayData = null;
+            if (this.showMarketOverlay && this.spyFilteredData.length > 0) {
+                spyOverlayData = this.prepareSPYOverlayData(tradingDaysData, this.spyFilteredData);
+            }
+
             // Update existing chart or create new one
             if (this.simpleCandlesticks && this.simpleCandlesticks.canvas === canvas) {
-                this.simpleCandlesticks.updateData(tradingDaysData, indicators);
+                this.simpleCandlesticks.updateData(tradingDaysData, indicators, spyOverlayData);
             } else {
                 // Clean up old chart if it exists
                 if (this.simpleCandlesticks) {
                     this.simpleCandlesticks.removeMouseEvents();
                 }
                 this.simpleCandlesticks = new SimpleCandlestickChart(canvas, tradingDaysData);
-                this.simpleCandlesticks.draw(indicators);
+                this.simpleCandlesticks.draw(indicators, spyOverlayData);
             }
 
             // Create crosshair overlay for candlestick chart
@@ -820,6 +861,24 @@ class StockApp {
             }
         ];
 
+        // Add SPY market overlay if enabled
+        if (this.showMarketOverlay && this.spyFilteredData.length > 0) {
+            const spyOverlayData = this.prepareSPYOverlayData(tradingDaysData, this.spyFilteredData);
+            if (spyOverlayData) {
+                datasets.push({
+                    label: 'SPY (Market)',
+                    type: 'line',
+                    data: spyOverlayData,
+                    borderColor: 'rgba(255, 255, 255, 0.8)', // White color
+                    backgroundColor: 'transparent',
+                    pointRadius: 0,
+                    borderWidth: 2,
+                    // Solid line (no borderDash)
+                    fill: false
+                });
+            }
+        }
+
         console.log('Creating chart with datasets:', datasets.length);
 
         this.priceChart = new Chart(ctx, {
@@ -863,16 +922,22 @@ class StockApp {
         // Get technical indicators if enabled
         const indicators = this.getFilteredIndicators(tradingDaysData);
 
+        // Prepare SPY overlay data if enabled
+        let spyOverlayData = null;
+        if (this.showMarketOverlay && this.spyFilteredData.length > 0) {
+            spyOverlayData = this.prepareSPYOverlayData(tradingDaysData, this.spyFilteredData);
+        }
+
         // Update existing chart or create new one
         if (this.simpleLineChart && this.simpleLineChart.canvas === canvas) {
-            this.simpleLineChart.updateData(tradingDaysData, indicators);
+            this.simpleLineChart.updateData(tradingDaysData, indicators, spyOverlayData);
         } else {
             // Clean up old chart if it exists
             if (this.simpleLineChart) {
                 this.simpleLineChart.removeMouseEvents();
             }
             this.simpleLineChart = new SimpleLineChart(canvas, tradingDaysData);
-            this.simpleLineChart.draw(indicators);
+            this.simpleLineChart.draw(indicators, spyOverlayData);
         }
 
         // Create crosshair overlay for line chart
@@ -1785,6 +1850,32 @@ class StockApp {
         this.updateTickerColorsForBlueMode();
     }
 
+    toggleMarketOverlay() {
+        this.showMarketOverlay = !this.showMarketOverlay;
+        this.updateCharts();
+    }
+
+    prepareSPYOverlayData(stockData, spyData) {
+        if (!stockData.length || !spyData.length) return null;
+
+        // Get the initial prices (first data point in the time window)
+        const stockInitialPrice = stockData[0].close;
+        const spyInitialPrice = spyData[0].close;
+
+        // Normalize SPY data to stock's initial price for comparison
+        const normalizedSpyData = spyData.map((spyPoint, index) => {
+            const spyPercentChange = (spyPoint.close - spyInitialPrice) / spyInitialPrice;
+            const normalizedPrice = stockInitialPrice * (1 + spyPercentChange);
+
+            return {
+                x: index,
+                y: normalizedPrice
+            };
+        });
+
+        return normalizedSpyData;
+    }
+
     updateTickerColorsForBlueMode() {
         // Synchronously update ticker colors for blue mode - no API calls needed
         const tickerItems = document.querySelectorAll('.ticker-item');
@@ -2033,7 +2124,7 @@ class SimpleLineChart {
         this.chartArea.height = this.chartArea.bottom - this.chartArea.top;
     }
 
-    getMinMax() {
+    getMinMax(spyOverlayData = null) {
         let min = Infinity;
         let max = -Infinity;
 
@@ -2041,6 +2132,14 @@ class SimpleLineChart {
             min = Math.min(min, d.low);
             max = Math.max(max, d.high);
         });
+
+        // Include SPY overlay data in min/max calculation
+        if (spyOverlayData) {
+            spyOverlayData.forEach(point => {
+                min = Math.min(min, point.y);
+                max = Math.max(max, point.y);
+            });
+        }
 
         // Add 5% padding (same as SimpleCandlestickChart)
         const padding = (max - min) * 0.05;
@@ -2157,13 +2256,35 @@ class SimpleLineChart {
         this.ctx.setLineDash([]); // Reset dash
     }
 
-    draw(indicators) {
+    drawSpyOverlay(spyOverlayData, min, max) {
+        if (!spyOverlayData || spyOverlayData.length === 0) return;
+
+        this.ctx.beginPath();
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'; // White color
+        this.ctx.lineWidth = 2;
+        // Solid line (no setLineDash)
+
+        spyOverlayData.forEach((point, index) => {
+            const x = this.xPosition(point.x);
+            const y = this.yPosition(point.y, min, max);
+
+            if (index === 0) {
+                this.ctx.moveTo(x, y);
+            } else {
+                this.ctx.lineTo(x, y);
+            }
+        });
+
+        this.ctx.stroke();
+    }
+
+    draw(indicators, spyOverlayData = null) {
         // Clear canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
         if (this.data.length === 0) return;
 
-        const { min, max } = this.getMinMax();
+        const { min, max } = this.getMinMax(spyOverlayData);
 
         // Draw grid
         this.drawGrid(min, max);
@@ -2173,17 +2294,22 @@ class SimpleLineChart {
             this.drawTechnicalIndicators(indicators);
         }
 
+        // Draw SPY overlay line if provided
+        if (spyOverlayData) {
+            this.drawSpyOverlay(spyOverlayData, min, max);
+        }
+
         // Draw main blue line
         this.drawLine();
 
         console.log(`Drew blue line with ${this.data.length} data points`);
     }
 
-    updateData(newData, indicators) {
+    updateData(newData, indicators, spyOverlayData = null) {
         this.data = newData;
         this.setupCanvas();
         this.calculateDimensions();
-        this.draw(indicators);
+        this.draw(indicators, spyOverlayData);
     }
 
     setupMouseEvents(onHover, onLeave) {
