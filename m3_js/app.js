@@ -47,6 +47,15 @@ class StockApp {
         this.spyData = [];
         this.spyFilteredData = [];
 
+        // Click zoom functionality
+        this.isZoomSelecting = false;
+        this.zoomStartIndex = null;
+        this.zoomEndIndex = null;
+        this.zoomStartDate = null;
+        this.zoomEndDate = null;
+        this.isCustomZoomActive = false;
+        this.zoomOverlay = null;
+
         this.init();
     }
 
@@ -134,6 +143,22 @@ class StockApp {
             } else if (e.key === 'm' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.toggleMarketOverlay();
+            } else if (e.key === 'z' && e.target !== tickerInput) {
+                e.preventDefault();
+                this.resetZoom();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                if (this.isZoomSelecting) {
+                    // Cancel zoom selection
+                    this.isZoomSelecting = false;
+                    this.zoomStartIndex = null;
+                    this.zoomStartDate = null;
+                    this.clearZoomSelection();
+                    console.log('Zoom selection cancelled');
+                } else if (this.isCustomZoomActive) {
+                    // Reset zoom if already zoomed
+                    this.resetZoom();
+                }
             }
         });
     }
@@ -143,6 +168,11 @@ class StockApp {
 
         this.currentTicker = ticker.toUpperCase();
         document.getElementById('ticker-input').value = this.currentTicker;
+
+        // Reset any active zoom when changing tickers
+        if (this.isCustomZoomActive || this.isZoomSelecting) {
+            this.resetZoom();
+        }
 
         // Update ticker selection in sidebar
         this.updateTickerSelection();
@@ -191,8 +221,14 @@ class StockApp {
     filterSpyData() {
         if (!this.spyData.length) return;
 
-        // Apply the same time window filter as the main stock data
-        this.spyFilteredData = filterDataByTimeWindow(this.spyData, this.currentTimeWindow);
+        // Apply the same filtering logic as the main stock data
+        if (this.isCustomZoomActive && this.zoomStartDate && this.zoomEndDate) {
+            // Use custom zoom range for SPY data too
+            this.spyFilteredData = filterDataByDateRange(this.spyData, this.zoomStartDate, this.zoomEndDate);
+        } else {
+            // Use standard time window for SPY data
+            this.spyFilteredData = filterDataByTimeWindow(this.spyData, this.currentTimeWindow);
+        }
     }
 
     selectTicker(ticker) {
@@ -492,9 +528,23 @@ class StockApp {
     changeTimeWindow(timeWindow) {
         this.currentTimeWindow = timeWindow;
 
+        // Reset any active zoom when changing time windows
+        if (this.isCustomZoomActive || this.isZoomSelecting) {
+            this.isCustomZoomActive = false;
+            this.isZoomSelecting = false;
+            this.zoomStartIndex = null;
+            this.zoomEndIndex = null;
+            this.zoomStartDate = null;
+            this.zoomEndDate = null;
+            this.clearZoomSelection();
+        }
+
         // Update button states immediately for responsiveness
         document.querySelectorAll('.time-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.window === timeWindow);
+            btn.classList.remove('active');
+            if (btn.dataset.window === timeWindow) {
+                btn.classList.add('active');
+            }
         });
 
         // Debounce chart updates to prevent rapid switching performance issues
@@ -524,7 +574,13 @@ class StockApp {
 
     updateCharts() {
         // Performance optimization: filter data first
-        this.filteredData = filterDataByTimeWindow(this.stockData, this.currentTimeWindow);
+        if (this.isCustomZoomActive && this.zoomStartDate && this.zoomEndDate) {
+            // Use custom zoom range
+            this.filteredData = filterDataByDateRange(this.stockData, this.zoomStartDate, this.zoomEndDate);
+        } else {
+            // Use standard time window
+            this.filteredData = filterDataByTimeWindow(this.stockData, this.currentTimeWindow);
+        }
 
         // Also filter SPY data for market overlay
         this.filterSpyData();
@@ -544,8 +600,15 @@ class StockApp {
             });
         }
 
-        // Filter cached trading days data for current time window
-        const filteredTradingDays = filterDataByTimeWindow(this.cachedTradingDaysData, this.currentTimeWindow);
+        // Filter cached trading days data for current time window or custom zoom range
+        let filteredTradingDays;
+        if (this.isCustomZoomActive && this.zoomStartDate && this.zoomEndDate) {
+            // Use custom zoom range for trading days too
+            filteredTradingDays = filterDataByDateRange(this.cachedTradingDaysData, this.zoomStartDate, this.zoomEndDate);
+        } else {
+            // Use standard time window
+            filteredTradingDays = filterDataByTimeWindow(this.cachedTradingDaysData, this.currentTimeWindow);
+        }
         this.tradingDaysData = filteredTradingDays;
 
         this.createPriceChart();
@@ -704,12 +767,18 @@ class StockApp {
                 if (this.simpleCandlesticks) {
                     this.simpleCandlesticks.removeMouseEvents();
                 }
+
+                // Clean up zoom click handler
+                this.removeZoomClickHandler();
                 this.simpleCandlesticks = new SimpleCandlestickChart(canvas, tradingDaysData);
                 this.simpleCandlesticks.draw(indicators, spyOverlayData);
             }
 
             // Create crosshair overlay for candlestick chart
             this.createCrosshairOverlay('price-chart');
+
+            // Create zoom overlay for candlestick chart
+            this.createZoomOverlay('price-chart');
 
             // Setup mouse events with proper callbacks
             this.simpleCandlesticks.setupMouseEvents(
@@ -722,6 +791,11 @@ class StockApp {
                     this.selectedDataPoint = this.filteredData.findIndex(d => d.timestamp === tradingDay.timestamp);
 
                     this.updateStatusBar();
+
+                    // Handle zoom selection visual feedback
+                    if (this.isZoomSelecting) {
+                        this.drawZoomSelection(mouseX);
+                    }
 
                     // Draw crosshairs on overlays instead of redrawing charts
                     this.drawCandlestickCrosshair();
@@ -738,6 +812,9 @@ class StockApp {
                     this.clearVolumeChartCrosshair();
                 }
             );
+
+            // Add click handler for zoom functionality
+            this.addZoomClickHandler('price-chart');
 
             console.log('Simple candlestick chart created successfully with technical indicators and mouse tracking');
             return;
@@ -912,6 +989,9 @@ class StockApp {
             this.priceChart = null;
         }
 
+        // Clean up zoom click handler
+        this.removeZoomClickHandler();
+
         // Use pre-filtered trading days data for the line chart
         const tradingDaysData = this.tradingDaysData;
 
@@ -943,6 +1023,9 @@ class StockApp {
         // Create crosshair overlay for line chart
         this.createCrosshairOverlay('price-chart');
 
+        // Create zoom overlay for line chart
+        this.createZoomOverlay('price-chart');
+
         // Setup mouse events with proper callbacks
         this.simpleLineChart.setupMouseEvents(
             (dataIndex, mouseX, mouseY) => {
@@ -954,6 +1037,11 @@ class StockApp {
                 this.selectedDataPoint = this.filteredData.findIndex(d => d.timestamp === tradingDay.timestamp);
 
                 this.updateStatusBar();
+
+                // Handle zoom selection visual feedback
+                if (this.isZoomSelecting) {
+                    this.drawZoomSelection(mouseX);
+                }
 
                 // Draw crosshairs on overlays instead of redrawing charts
                 this.drawCandlestickCrosshair();
@@ -970,6 +1058,9 @@ class StockApp {
                 this.clearVolumeChartCrosshair();
             }
         );
+
+        // Add click handler for zoom functionality
+        this.addZoomClickHandler('price-chart');
 
         console.log('Simple blue line chart created successfully with technical indicators and mouse tracking');
     }
@@ -1087,6 +1178,38 @@ class StockApp {
         // Draw crosshairs on overlays for better performance
         this.drawCandlestickCrosshair();
         this.drawVolumeChartCrosshair();
+    }
+
+    createZoomOverlay(chartId) {
+        const chartCanvas = document.getElementById(chartId);
+        const container = chartCanvas.parentElement;
+
+        // Remove existing zoom overlay if present
+        const existingOverlay = container.querySelector('.zoom-overlay');
+        if (existingOverlay) {
+            existingOverlay.remove();
+        }
+
+        // Create overlay canvas for zoom selection
+        const overlay = document.createElement('canvas');
+        overlay.className = 'zoom-overlay';
+        overlay.style.position = 'absolute';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.pointerEvents = 'none';
+        overlay.style.zIndex = '11'; // Above crosshair overlay
+
+        // Match the size and scaling of the chart canvas
+        const rect = chartCanvas.getBoundingClientRect();
+        overlay.width = chartCanvas.width;
+        overlay.height = chartCanvas.height;
+        overlay.style.width = rect.width + 'px';
+        overlay.style.height = rect.height + 'px';
+
+        container.appendChild(overlay);
+        this.zoomOverlay = overlay;
+
+        return overlay;
     }
 
     createCrosshairOverlay(chartId) {
@@ -1357,6 +1480,144 @@ class StockApp {
 
         const ctx = overlay.getContext('2d');
         ctx.clearRect(0, 0, overlay.width, overlay.height);
+    }
+
+    drawZoomSelection(mouseX) {
+        if (!this.isZoomSelecting || !this.zoomOverlay) return;
+
+        const ctx = this.zoomOverlay.getContext('2d');
+
+        // Clear previous selection
+        ctx.clearRect(0, 0, this.zoomOverlay.width, this.zoomOverlay.height);
+
+        // Get chart area bounds
+        const chart = this.simpleCandlesticks || this.simpleLineChart;
+        if (!chart || !chart.chartArea) return;
+
+        const chartArea = chart.chartArea;
+        const startX = chart.xPosition(this.zoomStartIndex);
+
+        // Clamp mouse position to chart area
+        const endX = Math.max(chartArea.left, Math.min(mouseX, chartArea.right));
+
+        const rectLeft = Math.min(startX, endX);
+        const rectWidth = Math.abs(endX - startX);
+
+        // Draw transparent blue selection rectangle
+        ctx.fillStyle = 'rgba(0, 123, 255, 0.2)'; // Semi-transparent blue
+        ctx.fillRect(rectLeft, chartArea.top, rectWidth, chartArea.bottom - chartArea.top);
+
+        // Draw selection border
+        ctx.strokeStyle = 'rgba(0, 123, 255, 0.8)'; // More opaque blue border
+        ctx.lineWidth = 1;
+        ctx.strokeRect(rectLeft, chartArea.top, rectWidth, chartArea.bottom - chartArea.top);
+    }
+
+    clearZoomSelection() {
+        if (this.zoomOverlay) {
+            const ctx = this.zoomOverlay.getContext('2d');
+            ctx.clearRect(0, 0, this.zoomOverlay.width, this.zoomOverlay.height);
+        }
+    }
+
+    resetZoom() {
+        this.isCustomZoomActive = false;
+        this.isZoomSelecting = false;
+        this.zoomStartIndex = null;
+        this.zoomEndIndex = null;
+        this.zoomStartDate = null;
+        this.zoomEndDate = null;
+        this.clearZoomSelection();
+
+        // Remove any custom zoom indicators from UI (no longer needed)
+        // Time buttons will stay gray when zoomed
+
+        // Highlight the current time window button
+        document.querySelectorAll('.time-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        document.querySelector(`[data-window="${this.currentTimeWindow}"]`)?.classList.add('active');
+
+        // Update charts with original time window
+        this.updateCharts();
+    }
+
+    addZoomClickHandler(chartId) {
+        const canvas = document.getElementById(chartId);
+
+        // Remove existing click handler if any
+        if (this.zoomClickHandler) {
+            canvas.removeEventListener('click', this.zoomClickHandler);
+        }
+
+        this.zoomClickHandler = (event) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            const chart = this.simpleCandlesticks || this.simpleLineChart;
+            if (!chart || !chart.chartArea) return;
+
+            const chartArea = chart.chartArea;
+
+            // Check if click is within chart area
+            if (x >= chartArea.left && x <= chartArea.right &&
+                y >= chartArea.top && y <= chartArea.bottom) {
+
+                // Calculate which data point was clicked
+                const relativeX = x - chartArea.left;
+                const dataIndex = Math.round((relativeX / chartArea.width) * (this.tradingDaysData.length - 1));
+                const clampedIndex = Math.max(0, Math.min(dataIndex, this.tradingDaysData.length - 1));
+
+                if (!this.isZoomSelecting) {
+                    // Start zoom selection
+                    this.isZoomSelecting = true;
+                    this.zoomStartIndex = clampedIndex;
+                    this.zoomStartDate = new Date(this.tradingDaysData[clampedIndex].timestamp);
+                    console.log('Zoom selection started at index:', clampedIndex);
+                } else {
+                    // End zoom selection and apply zoom
+                    this.zoomEndIndex = clampedIndex;
+                    this.zoomEndDate = new Date(this.tradingDaysData[clampedIndex].timestamp);
+
+                    // Ensure start date is before end date
+                    if (this.zoomStartDate > this.zoomEndDate) {
+                        const tempDate = this.zoomStartDate;
+                        const tempIndex = this.zoomStartIndex;
+                        this.zoomStartDate = this.zoomEndDate;
+                        this.zoomStartIndex = this.zoomEndIndex;
+                        this.zoomEndDate = tempDate;
+                        this.zoomEndIndex = tempIndex;
+                    }
+
+                    this.isZoomSelecting = false;
+                    this.isCustomZoomActive = true;
+                    this.clearZoomSelection();
+
+                    // Update UI to show zoom is active - keep buttons gray
+                    document.querySelectorAll('.time-btn').forEach(btn => {
+                        btn.classList.remove('active');
+                    });
+
+                    console.log('Zoom applied from', this.zoomStartDate, 'to', this.zoomEndDate);
+
+                    // Update charts with new zoom range
+                    this.updateCharts();
+                }
+            }
+        };
+
+        canvas.addEventListener('click', this.zoomClickHandler);
+    }
+
+    removeZoomClickHandler() {
+        if (this.zoomClickHandler) {
+            const canvas = document.getElementById('price-chart');
+            if (canvas) {
+                canvas.removeEventListener('click', this.zoomClickHandler);
+            }
+            this.zoomClickHandler = null;
+        }
     }
 
 

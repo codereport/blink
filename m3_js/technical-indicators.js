@@ -145,6 +145,23 @@ function filterDataByTimeWindow(data, timeWindow) {
 }
 
 /**
+ * Filter data by custom date range
+ * @param {Array} data - Array of stock data objects
+ * @param {Date} startDate - Start date for the range
+ * @param {Date} endDate - End date for the range
+ * @returns {Array} Filtered data array
+ */
+function filterDataByDateRange(data, startDate, endDate) {
+    if (!data || data.length === 0) return [];
+    if (!startDate || !endDate) return data;
+
+    return data.filter(d => {
+        const date = new Date(d.timestamp);
+        return date >= startDate && date <= endDate;
+    });
+}
+
+/**
  * Prepare chart datasets for technical indicators
  * @param {Array} data - Filtered stock data
  * @returns {Object} Object containing all datasets for charting
