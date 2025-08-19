@@ -341,8 +341,8 @@ class StockApp {
 
         } catch (error) {
             console.error('Error loading available tickers:', error);
-            // Fallback to hardcoded list if API fails
-            this.availableTickers = ['NVDA', 'AAPL', 'AMZN', 'GOOG', 'META', 'MSFT', 'TSLA'];
+            // Fallback to hardcoded curated list if API fails
+            this.availableTickers = ['NVDA', 'AAPL', 'AMZN', 'CRWV', 'GOOGL', 'META', 'MSFT', 'NFLX', 'PLTR', 'SPY', 'TSLA'];
             await this.generateTickerList();
             this.updateTickerSelection();
         }

@@ -43,25 +43,20 @@ function isDataUpToDate(filePath) {
 
 // API endpoint to get available tickers
 app.get('/api/tickers', (req, res) => {
+    // Curated list of key stocks: Magnificent Seven + SPY + PLTR
+    const curatedTickers = ['NVDA', 'AAPL', 'AMZN', 'CRWV', 'GOOGL', 'META', 'MSFT', 'NFLX', 'PLTR', 'SPY', 'TSLA'];
     const historicalDataPath = path.join(__dirname, '..', 'historical_data');
 
     try {
-        const files = fs.readdirSync(historicalDataPath);
-        const tickers = files
-            .filter(file => file.endsWith('.csv'))
-            .map(file => file.replace('.csv', ''))
-            .sort(); // Sort alphabetically first
+        // Verify that data files exist for curated tickers
+        const availableTickers = curatedTickers.filter(ticker => {
+            const filePath = path.join(historicalDataPath, `${ticker}.csv`);
+            return fs.existsSync(filePath);
+        });
 
-        // Move NVDA to the front if it exists
-        const nvdaIndex = tickers.indexOf('NVDA');
-        if (nvdaIndex > -1) {
-            tickers.splice(nvdaIndex, 1);
-            tickers.unshift('NVDA');
-        }
-
-        res.json(tickers);
+        res.json(availableTickers);
     } catch (error) {
-        console.error('Error reading historical data directory:', error);
+        console.error('Error checking ticker data files:', error);
         res.status(500).json({ error: 'Failed to read ticker list' });
     }
 });
@@ -184,7 +179,7 @@ app.post('/api/stock/:ticker/update', (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`M3 JavaScript Stock Analysis server running on http://localhost:${PORT}`);
-    console.log('Available tickers: AAPL, GOOG, NVDA, TSLA');
+    console.log('Curated tickers: NVDA, AAPL, MSFT, GOOGL, AMZN, META, TSLA, NFLX, SPY, PLTR');
     console.log('');
     console.log('📊 Features:');
     console.log('  ✅ Interactive candlestick charts');
