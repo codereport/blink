@@ -888,6 +888,10 @@ class StockApp {
                         this.drawZoomSelection(mouseX);
                     }
 
+                    // Ensure crosshairs are cleared before drawing new ones
+                    this.clearCandlestickCrosshair();
+                    this.clearVolumeChartCrosshair();
+                    
                     // Draw crosshairs on overlays instead of redrawing charts
                     this.drawCandlestickCrosshair();
                     this.drawVolumeChartCrosshair();
@@ -1134,6 +1138,10 @@ class StockApp {
                     this.drawZoomSelection(mouseX);
                 }
 
+                // Ensure crosshairs are cleared before drawing new ones
+                this.clearCandlestickCrosshair();
+                this.clearVolumeChartCrosshair();
+                
                 // Draw crosshairs on overlays instead of redrawing charts
                 this.drawCandlestickCrosshair();
                 this.drawVolumeChartCrosshair();
@@ -1387,8 +1395,11 @@ class StockApp {
 
         const ctx = overlay.getContext('2d');
 
-        // Clear previous crosshair
+        // Ensure canvas is completely cleared before drawing
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, overlay.width, overlay.height);
+        ctx.restore();
 
         // Handle SimpleCandlestickChart or SimpleLineChart
         if (this.simpleCandlesticks || this.simpleLineChart) {
@@ -1533,7 +1544,12 @@ class StockApp {
         if (!overlay) return;
 
         const ctx = overlay.getContext('2d');
+        
+        // Use robust clearing that resets transformations
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, overlay.width, overlay.height);
+        ctx.restore();
     }
 
     drawVolumeChartCrosshair() {
@@ -1545,8 +1561,11 @@ class StockApp {
         const ctx = overlay.getContext('2d');
         const volumeChartArea = this.simpleVolumeChart.chartArea;
 
-        // Clear previous crosshair
+        // Ensure canvas is completely cleared before drawing
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, overlay.width, overlay.height);
+        ctx.restore();
 
         // Calculate x position using the same method as SimpleVolumeChart
         const xPosition = this.simpleVolumeChart.xPosition(this.selectedTradingDayIndex);
@@ -1570,7 +1589,12 @@ class StockApp {
         if (!overlay) return;
 
         const ctx = overlay.getContext('2d');
+        
+        // Use robust clearing that resets transformations
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, overlay.width, overlay.height);
+        ctx.restore();
     }
 
     drawZoomSelection(mouseX) {

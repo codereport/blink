@@ -234,9 +234,9 @@ class SimpleCandlestickChart {
         // Remove existing event listeners to prevent duplicates
         this.removeMouseEvents();
 
-        // Throttle mouse moves for better performance  
+        // Reduced throttle for smoother crosshair movement
         let lastMouseMoveTime = 0;
-        const mouseMoveThrottle = 16; // ~60fps
+        const mouseMoveThrottle = 8; // Increased to ~120fps for smoother crosshairs
 
         this.mouseMoveHandler = (e) => {
             const now = Date.now();
