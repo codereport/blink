@@ -1,44 +1,34 @@
 # Blink Technical Stock Analysis
 
-A comprehensive technical stock analysis application available in both **Rust** and **JavaScript** implementations.
+A comprehensive technical stock analysis web application.
 
 ## 📊 Project Structure
 
 ```
 blink/
-├── blink/                 # Rust implementation (original)
-│   ├── src/main.rs       # Rust source code
-│   └── Cargo.toml        # Rust dependencies
-├── blink_js/              # JavaScript implementation (web version)
-│   ├── server.js         # Express server
-│   ├── index.html        # Web interface
-│   ├── app.js           # Main application logic
-│   └── package.json     # JavaScript dependencies
-├── historical_data/      # Shared stock data (CSV files)
-│   ├── AAPL.csv         # Apple Inc.
-│   ├── GOOG.csv         # Alphabet Inc.
-│   ├── NVDA.csv         # NVIDIA Corporation
-│   └── TSLA.csv         # Tesla Inc.
-└── README.md            # This file
+├── dev/                   # Web application
+│   ├── server.js          # Express server
+│   ├── index.html         # Web interface
+│   ├── app.js             # Main application logic
+│   └── package.json       # JavaScript dependencies
+├── historical_data/       # Stock data (CSV files)
+│   ├── AAPL.csv           # Apple Inc.
+│   ├── GOOG.csv           # Alphabet Inc.
+│   ├── NVDA.csv           # NVIDIA Corporation
+│   └── TSLA.csv           # Tesla Inc.
+└── README.md              # This file
 ```
 
 ## 🚀 Quick Start
 
-### JavaScript Web Version (Recommended for quick testing)
 ```bash
-cd blink_js
+cd dev
 npm install
 npm start
 # Open http://localhost:3000 in your browser
 ```
 
-### Rust Native Version
-```bash
-cd blink
-cargo run
-```
-
-## ✨ Features (Both Versions)
+## ✨ Features
 
 - **📈 Interactive Candlestick Charts**: Real-time OHLC price visualization
 - **📊 Volume Analysis**: Color-coded volume bars
@@ -57,17 +47,6 @@ cargo run
 - **GOOG** - Alphabet Inc.
 - **NVDA** - NVIDIA Corporation
 - **TSLA** - Tesla Inc.
-
-## 🔧 Implementation Comparison
-
-| Feature          | Rust Version      | JavaScript Version       |
-| ---------------- | ----------------- | ------------------------ |
-| **Performance**  | Native, very fast | Web-optimized, fast      |
-| **Deployment**   | Single executable | Web server + browser     |
-| **UI Framework** | Iced GUI          | Custom Canvas + Chart.js |
-| **Platform**     | Desktop native    | Cross-platform web       |
-| **Dependencies** | Minimal           | Node.js + browser        |
-| **Development**  | Rust ecosystem    | Web standards            |
 
 ## 📝 Technical Details
 
@@ -89,6 +68,4 @@ Historical data is stored in CSV format with columns:
 
 ## 🛠️ Development
 
-Both implementations share the same core functionality and visual design. The JavaScript version provides easier deployment and cross-platform compatibility, while the Rust version offers superior native performance.
-
-Choose the implementation that best fits your deployment needs and development preferences! 
+The application is built with Node.js/Express on the backend and vanilla JavaScript with Chart.js on the frontend, providing easy deployment and cross-platform compatibility. 

@@ -1,6 +1,6 @@
-# Blink Technical Stock Analysis - JavaScript Version
+# Blink Technical Stock Analysis
 
-A JavaScript port of the Rust Blink Technical Stock tracing program. This web-based application provides interactive stock chart analysis with technical indicators.
+A web-based application that provides interactive stock chart analysis with technical indicators.
 
 ## Features
 
@@ -12,8 +12,8 @@ A JavaScript port of the Rust Blink Technical Stock tracing program. This web-ba
 - **Multiple Time Windows**: 6 months, 1 year, 5 years
 - **Real-time Crosshairs**: Mouse tracking with data point selection
 - **Status Bar**: Shows detailed OHLC data and daily percentage changes
-- **Dark Theme**: Matches the original Rust application's appearance
-- **Keyboard Shortcuts**: Same shortcuts as the Rust version
+- **Dark Theme**: Professional financial application styling
+- **Keyboard Shortcuts**: Comprehensive keyboard controls
 
 ## Installation & Setup
 
@@ -86,20 +86,6 @@ CSV files in `historical_data/` directory with columns:
 - Volume (trading volume)
 - Dividends, Stock Splits (not used in visualization)
 
-## Differences from Rust Version
-
-### Similarities
-- Identical visual layout and dark theme
-- Same technical indicators and calculations
-- Same keyboard shortcuts and time windows
-- Same status bar format and data display
-
-### Web-Specific Adaptations
-- Uses Chart.js instead of Plotters/Iced for rendering
-- HTTP API for data loading instead of direct file reading
-- Browser-based instead of native desktop application
-- Responsive design for different screen sizes
-
 ## Development
 
 ### Adding New Tickers
@@ -130,8 +116,4 @@ Edit `styles.css` to modify:
 
 - Modern browsers with ES6+ support
 - HTML5 Canvas support required
-- WebGL recommended for optimal Chart.js performance
-
----
-
-This JavaScript version maintains feature parity with the original Rust application while leveraging web technologies for broader accessibility and easier deployment. 
+- WebGL recommended for optimal Chart.js performance 
