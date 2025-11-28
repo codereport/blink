@@ -178,7 +178,7 @@ app.post('/api/stock/:ticker/update', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`M3 JavaScript Stock Analysis server running on http://localhost:${PORT}`);
+    console.log(`Blink JavaScript Stock Analysis server running on http://localhost:${PORT}`);
     console.log('Curated tickers: NVDA, AAPL, MSFT, GOOGL, AMZN, META, TSLA, NFLX, SPY, PLTR');
     console.log('');
     console.log('📊 Features:');

@@ -1,6 +1,6 @@
-# M3 Technical Stock Analysis - JavaScript Version
+# Blink Technical Stock Analysis - JavaScript Version
 
-A JavaScript port of the Rust m3 Technical Stock tracing program. This web-based application provides interactive stock chart analysis with technical indicators.
+A JavaScript port of the Rust Blink Technical Stock tracing program. This web-based application provides interactive stock chart analysis with technical indicators.
 
 ## Features
 

@@ -1,7 +1,7 @@
 {
-    "name": "m3-javascript",
+    "name": "blink-javascript",
     "version": "1.0.0",
-    "description": "JavaScript port of the m3 Technical Stock tracing program",
+    "description": "JavaScript port of the Blink Technical Stock tracing program",
     "main": "server.js",
     "scripts": {
         "start": "node server.js",
@@ -22,6 +22,6 @@
         "charts",
         "finance"
     ],
-    "author": "Generated from Rust m3 program",
+    "author": "Generated from Rust Blink program",
     "license": "MIT"
 }

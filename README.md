@@ -1,15 +1,15 @@
-# M3 Technical Stock Analysis
+# Blink Technical Stock Analysis
 
 A comprehensive technical stock analysis application available in both **Rust** and **JavaScript** implementations.
 
 ## 📊 Project Structure
 
 ```
-3m/
-├── m3/                    # Rust implementation (original)
+blink/
+├── blink/                 # Rust implementation (original)
 │   ├── src/main.rs       # Rust source code
 │   └── Cargo.toml        # Rust dependencies
-├── m3_js/                # JavaScript implementation (web version)
+├── blink_js/              # JavaScript implementation (web version)
 │   ├── server.js         # Express server
 │   ├── index.html        # Web interface
 │   ├── app.js           # Main application logic
@@ -26,7 +26,7 @@ A comprehensive technical stock analysis application available in both **Rust** 
 
 ### JavaScript Web Version (Recommended for quick testing)
 ```bash
-cd m3_js
+cd blink_js
 npm install
 npm start
 # Open http://localhost:3000 in your browser
@@ -34,7 +34,7 @@ npm start
 
 ### Rust Native Version
 ```bash
-cd m3
+cd blink
 cargo run
 ```
 
