@@ -339,8 +339,8 @@ body {
 }
 
 .expression-item.active {
-    border-color: #50fa7b;
-    background-color: #1a2a1a;
+    border-color: #0080ff;
+    background-color: #1a1a2a;
 }
 
 .expression-item .expr-text {

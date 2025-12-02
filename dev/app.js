@@ -75,6 +75,10 @@ class StockApp {
         this.currentExpressionIndex = 0;
         this.expressionResultChart = null;
 
+        // Stock screening state
+        this.screeningResults = null;
+        this.isScreeningMode = false;
+
         this.init();
     }
 
@@ -182,6 +186,12 @@ class StockApp {
             } else if (e.key === 'm' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.toggleMarketOverlay();
+            } else if (e.key === 's' && e.target !== tickerInput) {
+                e.preventDefault();
+                this.screenStocksByExpression();
+            } else if (e.key === 'r' && e.target !== tickerInput) {
+                e.preventDefault();
+                this.resetTickerList();
             } else if (e.key === 'h' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.toggleHelpPopup();
@@ -703,11 +713,22 @@ class StockApp {
     }
 
     navigateTickers(direction) {
+        // Use screening results if in screening mode, otherwise use availableTickers
+        const tickerList = this.isScreeningMode && this.screeningResults
+            ? this.screeningResults.map(r => r.ticker)
+            : this.availableTickers;
+
+        // Find current ticker position in the displayed list
+        const currentIndex = tickerList.indexOf(this.currentTicker);
+
         // Calculate new index with wrapping
-        this.currentTickerIndex = (this.currentTickerIndex + direction + this.availableTickers.length) % this.availableTickers.length;
+        const newIndex = (currentIndex + direction + tickerList.length) % tickerList.length;
+
+        // Update currentTickerIndex to match the original availableTickers array
+        const newTicker = tickerList[newIndex];
+        this.currentTickerIndex = this.availableTickers.indexOf(newTicker);
 
         // Select the new ticker
-        const newTicker = this.availableTickers[this.currentTickerIndex];
         this.selectTicker(newTicker);
     }
 
@@ -1258,6 +1279,181 @@ class StockApp {
         this.updateExpressionResultViewer();
 
         console.log('All expressions recomputed');
+    }
+
+    async screenStocksByExpression() {
+        // Check if we have expressions and current expression is scalar
+        if (this.expressions.length === 0) {
+            alert('No expressions to screen with. Create an expression first.');
+            return;
+        }
+
+        const currentExpr = this.expressions[this.currentExpressionIndex];
+        if (!currentExpr) {
+            alert('No expression selected.');
+            return;
+        }
+
+        if (currentExpr.resultType !== 'scalar') {
+            alert('Screening only works with scalar (single value) expressions.\nThe current expression returns an array.');
+            return;
+        }
+
+        console.log('Screening stocks with expression:', currentExpr.expression);
+
+        // Show loading indicator
+        const statusText = document.getElementById('status-text');
+        const originalStatus = statusText.textContent;
+
+        try {
+            // Load full ticker list for screening
+            statusText.textContent = 'Loading full ticker list for screening...';
+            const response = await fetch('/api/tickers?full=true');
+            if (!response.ok) {
+                throw new Error('Failed to load full ticker list');
+            }
+            const allTickers = await response.json();
+
+            statusText.textContent = `Screening ${allTickers.length} stocks with expression: ${currentExpr.expression}...`;
+
+            // Calculate data length to use (current view's length)
+            const dataLength = this.tradingDaysData.length;
+
+            // Compute expression for all tickers
+            const results = [];
+            for (const ticker of allTickers) {
+                try {
+                    const response = await fetch('/api/transpile', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            expression: currentExpr.expression,
+                            ticker: ticker,
+                            dataLength: dataLength.toString()
+                        })
+                    });
+
+                    if (!response.ok) {
+                        console.error(`Failed to compute for ${ticker}`);
+                        continue;
+                    }
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        const output = result.output.trim();
+                        const parsed = this.parseExpressionResult(output);
+
+                        if (parsed.type === 'scalar' && !isNaN(parsed.data)) {
+                            results.push({
+                                ticker: ticker,
+                                value: parsed.data
+                            });
+                        }
+                    }
+
+                    // Update progress
+                    statusText.textContent = `Screening... ${results.length}/${allTickers.length} complete`;
+
+                } catch (error) {
+                    console.error(`Error screening ${ticker}:`, error);
+                }
+            }
+
+            // Sort results by value (highest to lowest)
+            results.sort((a, b) => b.value - a.value);
+
+            // Store screening results
+            this.screeningResults = results;
+            this.isScreeningMode = true;
+
+            // Update ticker list with sorted results
+            this.updateTickerListWithScreening(results);
+
+            // Select the top ranked stock
+            if (results.length > 0) {
+                this.selectTicker(results[0].ticker);
+            }
+
+            // Restore status
+            statusText.textContent = `Screened ${results.length} stocks. Sorted by: ${currentExpr.expression}`;
+
+            console.log('Screening complete:', results);
+
+        } catch (error) {
+            console.error('Error during screening:', error);
+            alert(`Screening failed: ${error.message}`);
+            statusText.textContent = originalStatus;
+        }
+    }
+
+    updateTickerListWithScreening(results) {
+        const tickerList = document.querySelector('.ticker-list');
+        if (!tickerList) return;
+
+        // Clear existing list
+        tickerList.innerHTML = '';
+
+        // Create ticker items from screening results
+        results.forEach(result => {
+            const tickerItem = document.createElement('div');
+            tickerItem.className = 'ticker-item';
+            tickerItem.dataset.ticker = result.ticker;
+
+            // Highlight current ticker
+            if (result.ticker === this.currentTicker) {
+                tickerItem.classList.add('active');
+            }
+
+            // Create ticker name span
+            const tickerNameSpan = document.createElement('span');
+            tickerNameSpan.className = 'ticker-name';
+            tickerNameSpan.textContent = result.ticker;
+
+            // Set color based on current ticker
+            if (result.ticker === this.currentTicker) {
+                tickerNameSpan.style.color = 'white';
+            }
+
+            // Create value span showing the screening result
+            const valueSpan = document.createElement('span');
+            valueSpan.className = 'ticker-percentage';
+            valueSpan.textContent = ` (${result.value.toFixed(2)})`;
+
+            // Color based on value (positive = green/blue, negative = red/blue)
+            if (this.blueMode) {
+                valueSpan.style.color = '#0080ff';
+            } else {
+                valueSpan.style.color = result.value >= 0 ? '#00ff00' : '#ff0000';
+            }
+
+            tickerItem.appendChild(tickerNameSpan);
+            tickerItem.appendChild(valueSpan);
+
+            // Add click handler
+            tickerItem.addEventListener('click', () => {
+                this.selectTicker(result.ticker);
+            });
+
+            tickerList.appendChild(tickerItem);
+        });
+    }
+
+    async resetTickerList() {
+        // Exit screening mode and restore normal ticker list
+        this.isScreeningMode = false;
+        this.screeningResults = null;
+
+        // Regenerate ticker list with normal percentage display
+        await this.loadAvailableTickers();
+        this.updateTickerSelection();
+
+        // Restore status bar
+        this.updateStatusBar();
+
+        console.log('Ticker list reset to normal mode');
     }
 
     async updateCharts() {

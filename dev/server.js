@@ -43,20 +43,39 @@ function isDataUpToDate(filePath) {
 
 // API endpoint to get available tickers
 app.get('/api/tickers', (req, res) => {
-    // Curated list of key stocks: Magnificent Seven + SPY + PLTR
-    const curatedTickers = ['NVDA', 'AAPL', 'AMZN', 'CRWV', 'GOOGL', 'META', 'MSFT', 'NFLX', 'PLTR', 'SPY', 'TSLA'];
     const historicalDataPath = path.join(__dirname, '..', 'historical_data');
 
     try {
-        // Verify that data files exist for curated tickers
-        const availableTickers = curatedTickers.filter(ticker => {
-            const filePath = path.join(historicalDataPath, `${ticker}.csv`);
-            return fs.existsSync(filePath);
-        });
+        // Check if requesting full list or curated list
+        const fullList = req.query.full === 'true';
+        
+        if (fullList) {
+            // Read all CSV files from historical_data directory
+            const files = fs.readdirSync(historicalDataPath);
+            
+            // Extract ticker names from .csv files
+            const availableTickers = files
+                .filter(file => file.endsWith('.csv'))
+                .map(file => file.replace('.csv', ''))
+                .sort(); // Sort alphabetically
 
-        res.json(availableTickers);
+            console.log(`Returning full list: ${availableTickers.length} tickers`);
+            res.json(availableTickers);
+        } else {
+            // Return curated list for UI display
+            const curatedTickers = ['NVDA', 'AAPL', 'AMZN', 'CRWV', 'GOOGL', 'META', 'MSFT', 'NFLX', 'PLTR', 'SPY', 'TSLA'];
+            
+            // Verify that data files exist for curated tickers
+            const availableTickers = curatedTickers.filter(ticker => {
+                const filePath = path.join(historicalDataPath, `${ticker}.csv`);
+                return fs.existsSync(filePath);
+            });
+
+            console.log(`Returning curated list: ${availableTickers.length} tickers`);
+            res.json(availableTickers);
+        }
     } catch (error) {
-        console.error('Error checking ticker data files:', error);
+        console.error('Error reading ticker data files:', error);
         res.status(500).json({ error: 'Failed to read ticker list' });
     }
 });
@@ -237,7 +256,7 @@ app.post('/api/transpile', (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`Blink JavaScript Stock Analysis server running on http://localhost:${PORT}`);
-    console.log('Curated tickers: NVDA, AAPL, MSFT, GOOGL, AMZN, META, TSLA, NFLX, SPY, PLTR');
+    console.log('Loading all available tickers from historical_data/');
     console.log('');
     console.log('📊 Features:');
     console.log('  ✅ Interactive candlestick charts');
