@@ -60,12 +60,28 @@ class StockApp {
         // Help popup state
         this.isHelpVisible = false;
 
+        // DSL popup state
+        this.isDslVisible = false;
+        this.dslMappings = {
+            'first': { symbol: '⊃', type: 'unary' },
+            'delta': { symbol: '△', type: 'modifier' },
+            'div': { symbol: '÷', type: 'binary' },
+            '*': { symbol: '×', type: 'binary' },
+            '-': { symbol: '-', type: 'unary' }
+        };
+
+        // Expression list and results
+        this.expressions = []; // Array of {id, expression, result, resultType: 'scalar'|'array', resultData}
+        this.currentExpressionIndex = 0;
+        this.expressionResultChart = null;
+
         this.init();
     }
 
     async init() {
         this.setupEventListeners();
         this.setupHelpPopup(); // Setup help popup event listeners
+        this.setupDslPopup(); // Setup DSL popup event listeners
         await this.loadAvailableTickers(); // Load tickers dynamically first
         this.updateTickerSelection(); // Initialize ticker selection UI
         this.loadData(this.currentTicker);
@@ -109,6 +125,16 @@ class StockApp {
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
+            // Don't process shortcuts if DSL popup is visible (except Escape and Ctrl+Enter)
+            if (this.isDslVisible) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    this.hideDslPopup();
+                }
+                // Allow all other keys to be typed normally in DSL mode
+                return;
+            }
+
             if (e.ctrlKey && (e.key === 'q' || e.key === 'w')) {
                 e.preventDefault();
                 window.close();
@@ -139,6 +165,14 @@ class StockApp {
                 // Navigate down in ticker list
                 e.preventDefault();
                 this.navigateTickers(1);
+            } else if (e.key === 'ArrowLeft' && e.target !== tickerInput) {
+                // Navigate left in expression list
+                e.preventDefault();
+                this.navigateExpressions(-1);
+            } else if (e.key === 'ArrowRight' && e.target !== tickerInput) {
+                // Navigate right in expression list
+                e.preventDefault();
+                this.navigateExpressions(1);
             } else if (e.key === 't' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.toggleTechnicalIndicators();
@@ -151,12 +185,18 @@ class StockApp {
             } else if (e.key === 'h' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.toggleHelpPopup();
+            } else if (e.key === '/' && e.target !== tickerInput) {
+                e.preventDefault();
+                this.showDslPopup();
             } else if (e.key === 'f' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.toggleFullscreen();
             } else if (e.key === 'Escape') {
                 e.preventDefault();
-                if (this.isHelpVisible) {
+                if (this.isDslVisible) {
+                    // Close DSL popup if open
+                    this.hideDslPopup();
+                } else if (this.isHelpVisible) {
                     // Close help popup if open
                     this.hideHelpPopup();
                 } else if (this.isZoomSelecting) {
@@ -230,6 +270,356 @@ class StockApp {
         }
     }
 
+    setupDslPopup() {
+        // Setup backdrop click to close
+        const dslPopup = document.getElementById('dsl-popup');
+        if (dslPopup) {
+            dslPopup.addEventListener('click', (e) => {
+                if (e.target === dslPopup) {
+                    this.hideDslPopup();
+                }
+            });
+        }
+
+        // Setup DSL input keyboard handler
+        const dslInput = document.getElementById('dsl-input');
+        if (dslInput) {
+            // Prevent clicks on input from closing the popup
+            dslInput.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
+
+            dslInput.addEventListener('keydown', (e) => {
+                if (e.ctrlKey && e.key === 'Enter') {
+                    e.preventDefault();
+                    this.translateDslKeywords();
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.processDslExpression();
+                }
+                // All other keys pass through normally for typing
+            });
+
+            // Update colors after any input to ensure proper styling
+            dslInput.addEventListener('input', () => {
+                this.updateDslColors();
+            });
+        }
+    }
+
+    showDslPopup() {
+        const dslPopup = document.getElementById('dsl-popup');
+        if (dslPopup) {
+            dslPopup.classList.remove('hidden');
+            this.isDslVisible = true;
+            // Focus the DSL input
+            const dslInput = document.getElementById('dsl-input');
+            if (dslInput) {
+                setTimeout(() => {
+                    dslInput.focus();
+                    // Move cursor to end
+                    const range = document.createRange();
+                    const sel = window.getSelection();
+                    if (dslInput.childNodes.length > 0) {
+                        range.selectNodeContents(dslInput);
+                        range.collapse(false);
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                    }
+                }, 100);
+            }
+        }
+    }
+
+    hideDslPopup() {
+        const dslPopup = document.getElementById('dsl-popup');
+        if (dslPopup) {
+            dslPopup.classList.add('hidden');
+            this.isDslVisible = false;
+            // Clear the input and result
+            const dslInput = document.getElementById('dsl-input');
+            if (dslInput) {
+                dslInput.innerHTML = '';
+            }
+            const dslResult = document.getElementById('dsl-result');
+            if (dslResult) {
+                dslResult.textContent = '';
+                dslResult.classList.add('hidden');
+            }
+        }
+    }
+
+    async processDslExpression() {
+        const dslInput = document.getElementById('dsl-input');
+        if (!dslInput) return;
+
+        const expression = this.getTextContent(dslInput);
+        if (!expression.trim()) {
+            this.hideDslPopup();
+            return;
+        }
+
+        try {
+            // Calculate data length based on current filtered data
+            const dataLength = this.tradingDaysData.length;
+
+            // Call the transpile.py script with current ticker and data length
+            const response = await fetch('/api/transpile', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    expression: expression,
+                    ticker: this.currentTicker,
+                    dataLength: dataLength.toString()
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            if (result.success) {
+                // Parse the result to determine if it's scalar or array
+                const output = result.output.trim();
+                const parsed = this.parseExpressionResult(output);
+
+                // Add to expression list
+                const expressionData = {
+                    id: Date.now(),
+                    expression: expression,
+                    result: output,
+                    resultType: parsed.type,
+                    resultData: parsed.data,
+                    ticker: this.currentTicker,  // Store ticker for recomputation
+                    dataLength: dataLength        // Store data length
+                };
+
+                this.expressions.push(expressionData);
+                this.currentExpressionIndex = this.expressions.length - 1;
+
+                // Update UI
+                this.updateExpressionList();
+                this.updateExpressionResultViewer();
+
+                console.log('Expression added:', expressionData);
+            } else {
+                console.error('Transpile error:', result.error);
+                alert(`Error: ${result.error}`);
+            }
+
+        } catch (error) {
+            console.error('Error processing DSL expression:', error);
+            alert(`Error: ${error.message}`);
+        }
+
+        this.hideDslPopup();
+    }
+
+    parseExpressionResult(output) {
+        // Try to parse the output as array or scalar
+        // BQN array output looks like: ⟨ 1.2 3.4 5.6 ⟩ or just a number
+        // BQN uses ¯ (U+00AF) for negative numbers, not regular minus -
+        const trimmed = output.trim();
+
+        // Replace BQN's negative sign ¯ with regular minus -
+        const normalized = trimmed.replace(/¯/g, '-');
+
+        // Check if it's an array (starts with ⟨ or [ and contains spaces/newlines)
+        if (normalized.startsWith('⟨') || (normalized.includes(' ') && !normalized.includes('\n'))) {
+            // Parse as array
+            const arrayMatch = normalized.match(/⟨([^⟩]+)⟩/);
+            let values;
+
+            if (arrayMatch) {
+                values = arrayMatch[1].trim().split(/\s+/).map(v => parseFloat(v));
+            } else {
+                // Try splitting by spaces
+                values = normalized.split(/\s+/).map(v => parseFloat(v)).filter(v => !isNaN(v));
+            }
+
+            if (values.length > 1) {
+                return { type: 'array', data: values };
+            }
+        }
+
+        // Try to parse as single number
+        const num = parseFloat(normalized);
+        if (!isNaN(num)) {
+            return { type: 'scalar', data: num };
+        }
+
+        // Default to scalar string representation
+        return { type: 'scalar', data: trimmed };
+    }
+
+    getTextContent(element) {
+        // Get plain text from contenteditable, preserving actual text content
+        return element.textContent || '';
+    }
+
+    getCursorPosition(element) {
+        const sel = window.getSelection();
+        if (sel.rangeCount === 0) return 0;
+
+        const range = sel.getRangeAt(0);
+        const preCaretRange = range.cloneRange();
+        preCaretRange.selectNodeContents(element);
+        preCaretRange.setEnd(range.endContainer, range.endOffset);
+
+        return preCaretRange.toString().length;
+    }
+
+    setCursorPosition(element, position) {
+        const range = document.createRange();
+        const sel = window.getSelection();
+
+        let currentPos = 0;
+        let targetNode = null;
+        let targetOffset = 0;
+
+        const walker = document.createTreeWalker(
+            element,
+            NodeFilter.SHOW_TEXT,
+            null,
+            false
+        );
+
+        let node;
+        while (node = walker.nextNode()) {
+            const nodeLength = node.textContent.length;
+
+            if (currentPos + nodeLength >= position) {
+                targetNode = node;
+                targetOffset = position - currentPos;
+                break;
+            }
+
+            currentPos += nodeLength;
+        }
+
+        if (targetNode) {
+            range.setStart(targetNode, Math.min(targetOffset, targetNode.textContent.length));
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+        } else if (element.childNodes.length > 0) {
+            // If no text node found, position at end
+            range.selectNodeContents(element);
+            range.collapse(false);
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+    }
+
+    translateDslKeywords() {
+        const dslInput = document.getElementById('dsl-input');
+        if (!dslInput) return;
+
+        let text = this.getTextContent(dslInput);
+
+        // Save cursor position before update
+        const cursorPos = this.getCursorPosition(dslInput);
+
+        // Sort keywords by length (longest first) to avoid partial matches
+        // e.g., "first" should be matched before "fir" if both were keywords
+        const sortedMappings = Object.entries(this.dslMappings).sort((a, b) => {
+            return b[0].length - a[0].length;
+        });
+
+        // Replace each keyword with its Unicode symbol
+        // Remove word boundary for single-character keywords to allow non-delimited conversion
+        for (const [keyword, data] of sortedMappings) {
+            if (keyword.length === 1) {
+                // For single-char keywords like '*' and '-', replace all occurrences
+                const regex = new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+                text = text.replace(regex, data.symbol);
+            } else {
+                // For multi-char keywords, match them anywhere (not just word boundaries)
+                // This allows "firstdelta" to become "⊃△"
+                const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp(escapedKeyword, 'g');
+                text = text.replace(regex, data.symbol);
+            }
+        }
+
+        // Set the new content and update colors
+        this.setColoredContent(dslInput, text);
+
+        // Restore cursor position (might be shifted due to replacements)
+        this.setCursorPosition(dslInput, cursorPos);
+    }
+
+    setColoredContent(element, text) {
+        // Build HTML with colored symbols and white text
+        let html = '';
+        let currentGroup = '';
+        let isSymbol = false;
+        let symbolType = '';
+
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            let charIsSymbol = false;
+            let charSymbolType = '';
+
+            // Check if this character is a DSL symbol
+            for (const [keyword, data] of Object.entries(this.dslMappings)) {
+                if (char === data.symbol) {
+                    charIsSymbol = true;
+                    charSymbolType = data.type;
+                    break;
+                }
+            }
+
+            // If switching from text to symbol or vice versa, flush current group
+            if (charIsSymbol !== isSymbol || (charIsSymbol && charSymbolType !== symbolType)) {
+                if (currentGroup) {
+                    if (isSymbol) {
+                        html += `<span class="dsl-${symbolType}">${currentGroup}</span>`;
+                    } else {
+                        html += `<span class="dsl-text">${currentGroup}</span>`;
+                    }
+                    currentGroup = '';
+                }
+            }
+
+            currentGroup += char;
+            isSymbol = charIsSymbol;
+            symbolType = charSymbolType;
+        }
+
+        // Flush remaining group
+        if (currentGroup) {
+            if (isSymbol) {
+                html += `<span class="dsl-${symbolType}">${currentGroup}</span>`;
+            } else {
+                html += `<span class="dsl-text">${currentGroup}</span>`;
+            }
+        }
+
+        element.innerHTML = html || '';
+    }
+
+    updateDslColors() {
+        const dslInput = document.getElementById('dsl-input');
+        if (!dslInput) return;
+
+        const text = this.getTextContent(dslInput);
+        if (!text) return;
+
+        // Save cursor position
+        const cursorPos = this.getCursorPosition(dslInput);
+
+        // Update content with colors
+        this.setColoredContent(dslInput, text);
+
+        // Restore cursor position
+        this.setCursorPosition(dslInput, cursorPos);
+    }
+
     async loadData(ticker) {
         if (!ticker.trim()) return;
 
@@ -260,6 +650,9 @@ class StockApp {
             // Clear cache when new data is loaded
             this.clearCache();
             this.updateCharts();
+
+            // Recompute expressions for new ticker
+            await this.recomputeExpressions();
 
         } catch (error) {
             console.error('Error loading data:', error);
@@ -316,6 +709,17 @@ class StockApp {
         // Select the new ticker
         const newTicker = this.availableTickers[this.currentTickerIndex];
         this.selectTicker(newTicker);
+    }
+
+    navigateExpressions(direction) {
+        if (this.expressions.length === 0) return;
+
+        // Calculate new index with wrapping
+        this.currentExpressionIndex = (this.currentExpressionIndex + direction + this.expressions.length) % this.expressions.length;
+
+        // Update UI
+        this.updateExpressionList();
+        this.updateExpressionResultViewer();
     }
 
     async loadAvailableTickers() {
@@ -639,7 +1043,224 @@ class StockApp {
         statusText.textContent = 'Updating charts...';
     }
 
-    updateCharts() {
+    updateExpressionList() {
+        const expressionList = document.querySelector('.expression-list');
+        const expressionSidebar = document.querySelector('.expression-sidebar');
+        if (!expressionList) return;
+
+        // Show sidebar if we have expressions
+        if (this.expressions.length > 0 && expressionSidebar) {
+            expressionSidebar.classList.add('visible');
+        }
+
+        expressionList.innerHTML = '';
+
+        this.expressions.forEach((expr, index) => {
+            const item = document.createElement('div');
+            item.className = 'expression-item';
+            if (index === this.currentExpressionIndex) {
+                item.classList.add('active');
+            }
+            item.dataset.index = index;
+
+            const exprText = document.createElement('div');
+            exprText.className = 'expr-text';
+
+            // Apply color coding to the expression text
+            this.setColoredContent(exprText, expr.expression);
+
+            // Auto-size font based on character count
+            // 6 characters or less = full size (42px)
+            // More than 6 = reduce proportionally
+            const charCount = expr.expression.length;
+            let fontSize = 42;
+
+            if (charCount > 6) {
+                // Reduce font size proportionally
+                fontSize = Math.max(12, Math.floor(42 * 6 / charCount));
+            }
+
+            exprText.style.fontSize = fontSize + 'px';
+
+            item.appendChild(exprText);
+
+            const resultText = document.createElement('div');
+            resultText.className = 'expr-result';
+            if (expr.resultType === 'scalar') {
+                resultText.textContent = `= ${expr.resultData}`;
+            } else {
+                resultText.textContent = `[${expr.resultData.length} values]`;
+            }
+
+            item.appendChild(resultText);
+
+            item.addEventListener('click', () => {
+                this.currentExpressionIndex = index;
+                this.updateExpressionList();
+                this.updateExpressionResultViewer();
+            });
+
+            expressionList.appendChild(item);
+        });
+    }
+
+    updateExpressionResultViewer() {
+        const wrapper = document.querySelector('.expression-result-wrapper');
+        if (!wrapper) return;
+
+        if (this.expressions.length === 0) {
+            wrapper.classList.remove('visible');
+            return;
+        }
+
+        const currentExpr = this.expressions[this.currentExpressionIndex];
+        if (!currentExpr) return;
+
+        wrapper.classList.add('visible');
+
+        if (currentExpr.resultType === 'scalar') {
+            // Display scalar result
+            this.displayScalarResult(currentExpr);
+        } else {
+            // Display array result as line chart
+            this.displayArrayResult(currentExpr);
+        }
+    }
+
+    displayScalarResult(expr) {
+        const canvas = document.getElementById('expression-result-chart');
+        if (!canvas) return;
+
+        // Destroy existing chart
+        if (this.expressionResultChart) {
+            this.expressionResultChart = null;
+        }
+
+        // Create a simple visualization showing the scalar value
+        const ctx = canvas.getContext('2d');
+        const rect = canvas.getBoundingClientRect();
+
+        // Setup canvas
+        canvas.width = rect.width * window.devicePixelRatio;
+        canvas.height = rect.height * window.devicePixelRatio;
+        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        canvas.style.width = rect.width + 'px';
+        canvas.style.height = rect.height + 'px';
+
+        // Clear canvas
+        ctx.clearRect(0, 0, rect.width, rect.height);
+
+        // Draw centered text
+        ctx.fillStyle = '#0080ff'; // Blue mode blue
+        ctx.font = 'bold 36px Uiua386, JetBrains Mono, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const displayValue = typeof expr.resultData === 'number' ?
+            expr.resultData.toFixed(4) : expr.resultData;
+
+        ctx.fillText(`${displayValue}`, rect.width / 2, rect.height / 2);
+
+        // Draw expression label above
+        ctx.fillStyle = '#666666';
+        ctx.font = '14px Uiua386, JetBrains Mono, monospace';
+        ctx.fillText(expr.expression, rect.width / 2, rect.height / 2 - 40);
+    }
+
+    displayArrayResult(expr) {
+        const canvas = document.getElementById('expression-result-chart');
+        if (!canvas) return;
+
+        // Destroy existing chart
+        if (this.expressionResultChart) {
+            this.expressionResultChart = null;
+        }
+
+        // Use SimpleLineChart similar to SimpleVolumeChart
+        const lineData = expr.resultData.map((value, index) => {
+            // Try to align with trading days
+            const tradingDay = this.tradingDaysData[this.tradingDaysData.length - expr.resultData.length + index];
+            return {
+                value: value,
+                date: tradingDay ? tradingDay.date : `Point ${index}`,
+                timestamp: tradingDay ? tradingDay.timestamp : null
+            };
+        });
+
+        const colors = {
+            line: '#0080ff', // Blue mode blue
+            grid: 'rgba(255, 255, 255, 0.1)',
+            text: '#666666'
+        };
+
+        this.expressionResultChart = new SimpleExpressionChart(canvas, lineData, { colors: colors, label: expr.expression });
+        this.expressionResultChart.draw();
+
+        // Setup mouse events for crosshair
+        this.setupExpressionChartEvents();
+    }
+
+    setupExpressionChartEvents() {
+        // Expression values are now shown in the main status bar via updateStatusBar
+        // This method is kept for potential future enhancements
+    }
+
+    async recomputeExpressions() {
+        if (this.expressions.length === 0) return;
+
+        console.log('Recomputing expressions for ticker:', this.currentTicker);
+
+        // Get current data length
+        const dataLength = this.tradingDaysData.length;
+
+        // Recompute each expression
+        for (let i = 0; i < this.expressions.length; i++) {
+            const expr = this.expressions[i];
+
+            try {
+                const response = await fetch('/api/transpile', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        expression: expr.expression,
+                        ticker: this.currentTicker,
+                        dataLength: dataLength.toString()
+                    })
+                });
+
+                if (!response.ok) {
+                    console.error(`Failed to recompute expression: ${expr.expression}`);
+                    continue;
+                }
+
+                const result = await response.json();
+
+                if (result.success) {
+                    const output = result.output.trim();
+                    const parsed = this.parseExpressionResult(output);
+
+                    // Update the expression with new data
+                    this.expressions[i].result = output;
+                    this.expressions[i].resultType = parsed.type;
+                    this.expressions[i].resultData = parsed.data;
+                    this.expressions[i].ticker = this.currentTicker;
+                    this.expressions[i].dataLength = dataLength;
+                }
+            } catch (error) {
+                console.error(`Error recomputing expression ${expr.expression}:`, error);
+            }
+        }
+
+        // Update UI
+        this.updateExpressionList();
+        this.updateExpressionResultViewer();
+
+        console.log('All expressions recomputed');
+    }
+
+    async updateCharts() {
         // Performance optimization: filter data first
         if (this.isCustomZoomActive && this.zoomStartDate && this.zoomEndDate) {
             // Use custom zoom range
@@ -691,6 +1312,9 @@ class StockApp {
         this.selectedDataPoint = null;
         this.selectedTradingDayIndex = null;
         this.updateStatusBar();
+
+        // Recompute expressions when time window changes (affects data length)
+        await this.recomputeExpressions();
     }
 
     getFilteredIndicators(tradingDaysData) {
@@ -891,7 +1515,7 @@ class StockApp {
                     // Ensure crosshairs are cleared before drawing new ones
                     this.clearCandlestickCrosshair();
                     this.clearVolumeChartCrosshair();
-                    
+
                     // Draw crosshairs on overlays instead of redrawing charts
                     this.drawCandlestickCrosshair();
                     this.drawVolumeChartCrosshair();
@@ -1141,7 +1765,7 @@ class StockApp {
                 // Ensure crosshairs are cleared before drawing new ones
                 this.clearCandlestickCrosshair();
                 this.clearVolumeChartCrosshair();
-                
+
                 // Draw crosshairs on overlays instead of redrawing charts
                 this.drawCandlestickCrosshair();
                 this.drawVolumeChartCrosshair();
@@ -1544,7 +2168,7 @@ class StockApp {
         if (!overlay) return;
 
         const ctx = overlay.getContext('2d');
-        
+
         // Use robust clearing that resets transformations
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1589,7 +2213,7 @@ class StockApp {
         if (!overlay) return;
 
         const ctx = overlay.getContext('2d');
-        
+
         // Use robust clearing that resets transformations
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1794,6 +2418,26 @@ class StockApp {
             // Show volume as "No Trading" if it's zero (weekend/holiday)
             const volumeDisplay = dataPoint.volume === 0 ? 'No Trading' : this.formatVolumeNumber(dataPoint.volume);
 
+            // Get expression value if there's an active expression with array data
+            let expressionDisplay = '';
+            if (this.expressions.length > 0 && this.selectedTradingDayIndex !== null) {
+                const currentExpr = this.expressions[this.currentExpressionIndex];
+                if (currentExpr && currentExpr.resultType === 'array') {
+                    // Map selected trading day index to expression data index
+                    const exprDataLength = currentExpr.resultData.length;
+                    const tradingDaysLength = this.tradingDaysData.length;
+
+                    // Expression data is aligned with the last N trading days
+                    if (this.selectedTradingDayIndex >= tradingDaysLength - exprDataLength) {
+                        const exprIndex = this.selectedTradingDayIndex - (tradingDaysLength - exprDataLength);
+                        if (exprIndex >= 0 && exprIndex < exprDataLength) {
+                            const exprValue = currentExpr.resultData[exprIndex];
+                            expressionDisplay = ` | Expr: <span style="color: #0080ff; font-weight: bold">${exprValue.toFixed(4).padStart(8)}</span>`;
+                        }
+                    }
+                }
+            }
+
             // Apply dimmed styling if showing most recent data
             statusText.classList.toggle('status-dimmed', isDimmed);
 
@@ -1805,7 +2449,8 @@ class StockApp {
                 `Open: ${dataPoint.open.toFixed(2).padStart(6)} | ` +
                 `High: ${dataPoint.high.toFixed(2).padStart(6)} | ` +
                 `Low: ${dataPoint.low.toFixed(2).padStart(6)} | ` +
-                `Close: <span style="color: ${closeColor}; font-weight: bold">${dataPoint.close.toFixed(2).padStart(6)}</span>`;
+                `Close: <span style="color: ${closeColor}; font-weight: bold">${dataPoint.close.toFixed(2).padStart(6)}</span>` +
+                expressionDisplay;
         } else {
             // No data available - show placeholder
             statusText.classList.remove('status-dimmed');
@@ -2762,7 +3407,162 @@ class SimpleLineChart {
     }
 }
 
+// Simple Expression Chart for DSL Results
+class SimpleExpressionChart {
+    constructor(canvas, data, options = {}) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.data = data; // Array of {value, date, timestamp}
+        this.options = {
+            padding: { top: 20, bottom: 20, left: 60, right: 20 },
+            colors: {
+                line: '#0080ff',
+                grid: 'rgba(255, 255, 255, 0.1)',
+                text: '#666666'
+            },
+            label: '',
+            ...options
+        };
+
+        this.setupCanvas();
+        this.calculateDimensions();
+    }
+
+    setupCanvas() {
+        const rect = this.canvas.getBoundingClientRect();
+        this.canvas.width = rect.width * window.devicePixelRatio;
+        this.canvas.height = rect.height * window.devicePixelRatio;
+        this.ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        this.canvas.style.width = rect.width + 'px';
+        this.canvas.style.height = rect.height + 'px';
+    }
+
+    calculateDimensions() {
+        const rect = this.canvas.getBoundingClientRect();
+        this.chartArea = {
+            left: this.options.padding.left,
+            top: this.options.padding.top,
+            right: rect.width - this.options.padding.right,
+            bottom: rect.height - this.options.padding.bottom
+        };
+
+        this.chartArea.width = this.chartArea.right - this.chartArea.left;
+        this.chartArea.height = this.chartArea.bottom - this.chartArea.top;
+    }
+
+    getMinMax() {
+        const values = this.data.map(d => d.value).filter(v => !isNaN(v) && isFinite(v));
+
+        if (values.length === 0) {
+            return { min: 0, max: 1 };
+        }
+
+        let min = Math.min(...values);
+        let max = Math.max(...values);
+
+        // Add 5% padding
+        const padding = (max - min) * 0.05 || 0.1;
+        return { min: min - padding, max: max + padding };
+    }
+
+    xPosition(index) {
+        if (this.data.length === 1) {
+            return this.chartArea.left + this.chartArea.width / 2;
+        }
+        const spacing = this.chartArea.width / (this.data.length - 1);
+        return this.chartArea.left + (index * spacing);
+    }
+
+    yPosition(value, min, max) {
+        const ratio = (value - min) / (max - min);
+        return this.chartArea.bottom - (ratio * this.chartArea.height);
+    }
+
+    formatNumber(value) {
+        if (Math.abs(value) >= 1000) {
+            return value.toFixed(0);
+        } else if (Math.abs(value) >= 1) {
+            return value.toFixed(2);
+        } else {
+            return value.toFixed(4);
+        }
+    }
+
+    drawGrid(min, max) {
+        this.ctx.strokeStyle = this.options.colors.grid;
+        this.ctx.lineWidth = 1;
+
+        // Horizontal grid lines
+        const steps = 5;
+        for (let i = 0; i <= steps; i++) {
+            const value = min + ((max - min) * i / steps);
+            const y = this.yPosition(value, min, max);
+
+            this.ctx.beginPath();
+            this.ctx.moveTo(this.chartArea.left, y);
+            this.ctx.lineTo(this.chartArea.right, y);
+            this.ctx.stroke();
+
+            // Value labels
+            this.ctx.fillStyle = this.options.colors.text;
+            this.ctx.font = '12px monospace';
+            this.ctx.textAlign = 'right';
+            this.ctx.fillText(this.formatNumber(value), this.chartArea.left - 10, y + 4);
+        }
+    }
+
+    draw() {
+        // Clear canvas
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        if (this.data.length === 0) return;
+
+        const { min, max } = this.getMinMax();
+
+        // Draw grid
+        this.drawGrid(min, max);
+
+        // Draw line
+        this.ctx.strokeStyle = this.options.colors.line;
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+
+        let firstValidPoint = true;
+        this.data.forEach((point, index) => {
+            // Skip NaN or invalid values
+            if (isNaN(point.value) || !isFinite(point.value)) {
+                return;
+            }
+
+            const x = this.xPosition(index);
+            const y = this.yPosition(point.value, min, max);
+
+            if (firstValidPoint) {
+                this.ctx.moveTo(x, y);
+                firstValidPoint = false;
+            } else {
+                this.ctx.lineTo(x, y);
+            }
+        });
+
+        this.ctx.stroke();
+
+        // Draw label if provided
+        if (this.options.label) {
+            this.ctx.fillStyle = this.options.colors.text;
+            this.ctx.font = '14px Uiua386, JetBrains Mono, monospace';
+            this.ctx.textAlign = 'left';
+            this.ctx.fillText(this.options.label, this.chartArea.left, this.chartArea.top - 5);
+        }
+    }
+
+    updateData(newData) {
+        this.data = newData;
+        this.draw();
+    }
+}
+
 // Initialize the application when the page loads
 document.addEventListener('DOMContentLoaded', () => {
     new StockApp();
-}); 
+});

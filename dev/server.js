@@ -177,6 +177,64 @@ app.post('/api/stock/:ticker/update', (req, res) => {
     });
 });
 
+// API endpoint to transpile DSL expressions
+app.post('/api/transpile', (req, res) => {
+    const { expression, ticker, dataLength } = req.body;
+    
+    if (!expression) {
+        return res.status(400).json({ error: 'No expression provided' });
+    }
+
+    const transpileScript = path.join(__dirname, '..', 'blink-dsl', 'transpile.py');
+    
+    // Use provided ticker and dataLength, or defaults
+    const actualTicker = ticker || 'NVDA';
+    const actualDataLength = dataLength || '180';
+    
+    console.log(`Transpiling expression: ${expression} for ${actualTicker} (${actualDataLength} days)`);
+
+    // Run the transpile.py script with expression, ticker, and dataLength
+    const pythonProcess = spawn('python3', [transpileScript, expression, actualTicker, actualDataLength], {
+        cwd: path.join(__dirname, '..', 'blink-dsl')
+    });
+
+    let output = '';
+    let errorOutput = '';
+
+    pythonProcess.stdout.on('data', (data) => {
+        output += data.toString();
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+        errorOutput += data.toString();
+    });
+
+    pythonProcess.on('close', (code) => {
+        if (code === 0) {
+            console.log(`Transpile successful`);
+            res.json({
+                success: true,
+                output: output,
+                expression: expression
+            });
+        } else {
+            console.error(`Transpile failed. Exit code: ${code}`);
+            res.status(500).json({
+                success: false,
+                error: errorOutput || output
+            });
+        }
+    });
+
+    pythonProcess.on('error', (error) => {
+        console.error(`Error running transpile script: ${error.message}`);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    });
+});
+
 app.listen(PORT, () => {
     console.log(`Blink JavaScript Stock Analysis server running on http://localhost:${PORT}`);
     console.log('Curated tickers: NVDA, AAPL, MSFT, GOOGL, AMZN, META, TSLA, NFLX, SPY, PLTR');
@@ -189,5 +247,6 @@ app.listen(PORT, () => {
     console.log('  ✅ Multiple time windows (6M/1Y/5Y)');
     console.log('  ✅ Keyboard shortcuts (F11, 1-3, Ctrl+Q/W)');
     console.log('  ✅ Data update functionality');
+    console.log('  ✅ DSL transpilation (/ to open DSL mode)');
     console.log('');
 }); 

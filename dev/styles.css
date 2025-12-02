@@ -296,6 +296,66 @@ body {
     /* Important for flex child to shrink */
 }
 
+.expression-sidebar {
+    width: 200px;
+    background-color: #0a0a0a;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    padding: 10px;
+    display: none; /* Hidden by default */
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.expression-sidebar.visible {
+    display: flex;
+}
+
+.expression-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.expression-item {
+    padding: 10px 8px;
+    background-color: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    color: #b3b3b3;
+    font-family: 'Uiua386', 'JetBrains Mono', monospace;
+    word-break: break-all;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.expression-item:hover {
+    background-color: #2a2a2a;
+    border-color: #4a4a4a;
+}
+
+.expression-item.active {
+    border-color: #50fa7b;
+    background-color: #1a2a1a;
+}
+
+.expression-item .expr-text {
+    font-size: 42px;
+    margin-bottom: 4px;
+    line-height: 1.1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.expression-item .expr-result {
+    color: white;
+    font-size: 11px;
+}
+
 .ticker-sidebar {
     width: 120px;
     background-color: #0a0a0a;
@@ -350,6 +410,20 @@ body {
     /* Minimum height */
 }
 
+.expression-result-wrapper {
+    flex: 1.2;
+    position: relative;
+    background-color: #0a0a0a;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    min-height: 80px;
+    display: none; /* Hidden by default, shown when there's data */
+}
+
+.expression-result-wrapper.visible {
+    display: block;
+}
+
 .volume-chart-wrapper {
     flex: 1.56;
     /* Reduced by another 40% from 2.6 */
@@ -371,7 +445,8 @@ body {
 }
 
 #price-chart,
-#volume-chart {
+#volume-chart,
+#expression-result-chart {
     width: 100% !important;
     height: 100% !important;
 }
@@ -419,6 +494,95 @@ body {
     cursor: crosshair;
 }
 
+/* Blink DSL Input Popup Styles */
+@font-face {
+    font-family: 'Uiua386';
+    src: url('../Uiua386.ttf') format('truetype');
+}
+
+.dsl-popup {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+}
+
+.dsl-popup.hidden {
+    display: none;
+}
+
+.dsl-input {
+    width: 800px;
+    max-width: 85%;
+    background-color: #1a1a1a;
+    border: 2px solid #007acc;
+    border-radius: 20px;
+    padding: 20px 30px;
+    color: #e0e0e0;
+    font-family: 'Uiua386', 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
+    font-size: 64px;
+    outline: none;
+    box-shadow: 0 8px 32px rgba(0, 122, 204, 0.4);
+    text-align: center;
+    white-space: nowrap;
+    overflow-x: auto;
+    caret-color: #e0e0e0;
+}
+
+.dsl-result {
+    width: 800px;
+    max-width: 85%;
+    background-color: #2a2a2a;
+    border: 2px solid #50fa7b;
+    border-radius: 15px;
+    padding: 15px 25px;
+    color: #50fa7b;
+    font-family: 'Uiua386', 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
+    font-size: 48px;
+    text-align: center;
+    margin-top: 20px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.dsl-result.hidden {
+    display: none;
+}
+
+.dsl-input * {
+    color: inherit;
+}
+
+.dsl-input:empty:before {
+    content: attr(data-placeholder);
+    color: #666;
+    font-size: 48px;
+}
+
+/* Dracula color scheme for DSL symbols */
+.dsl-unary {
+    color: #50fa7b !important;  /* Dracula Green - unary functions */
+}
+
+.dsl-binary {
+    color: #8be9fd !important;  /* Dracula Cyan - binary functions */
+}
+
+.dsl-modifier {
+    color: #f1fa8c !important;  /* Dracula Yellow - modifiers */
+}
+
+.dsl-text {
+    color: #e0e0e0 !important;  /* White for regular text */
+}
+
 /* Responsive design */
 @media (max-width: 1200px) {
     .header {
@@ -435,6 +599,12 @@ body {
         flex-direction: column;
     }
 
+    .expression-sidebar {
+        width: 100%;
+        order: -2;
+        max-height: 150px;
+    }
+
     .ticker-sidebar {
         width: 100%;
         order: -1;
@@ -448,5 +618,15 @@ body {
 
     .ticker-item {
         min-width: 80px;
+    }
+    
+    .dsl-input {
+        width: 95%;
+        font-size: 56px;
+        padding: 18px 25px;
+    }
+    
+    .dsl-input:empty:before {
+        font-size: 40px;
     }
 }

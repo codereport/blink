@@ -28,9 +28,18 @@
         </div>
 
         <div class="main-content">
+            <div class="expression-sidebar">
+                <div class="expression-list">
+                    <!-- Expression items will be loaded dynamically -->
+                </div>
+            </div>
+
             <div class="chart-container">
                 <div class="price-chart-wrapper">
                     <canvas id="price-chart"></canvas>
+                </div>
+                <div class="expression-result-wrapper">
+                    <canvas id="expression-result-chart"></canvas>
                 </div>
                 <div class="volume-chart-wrapper">
                     <canvas id="volume-chart"></canvas>
@@ -69,9 +78,13 @@
                             <div class="shortcut"><kbd>T</kbd><span>Toggle Technical Indicators</span></div>
                             <div class="shortcut"><kbd>B</kbd><span>Toggle Blue Line Mode</span></div>
                             <div class="shortcut"><kbd>M</kbd><span>Toggle Market Overlay (SPY)</span></div>
+                            <div class="shortcut"><kbd>/</kbd><span>Open Blink DSL Input</span></div>
+                            <div class="shortcut"><kbd>Ctrl+Enter</kbd><span>DSL: Translate Keywords</span></div>
+                            <div class="shortcut"><kbd>Enter</kbd><span>DSL: Execute Expression</span></div>
                             <div class="shortcut"><kbd>Esc</kbd><span>Cancel Zoom / Reset Zoom</span></div>
                             <div class="shortcut"><kbd>1-4</kbd><span>Time Windows (3M, 6M, 1Y, 5Y)</span></div>
                             <div class="shortcut"><kbd>↑↓</kbd><span>Navigate Ticker List</span></div>
+                            <div class="shortcut"><kbd>←→</kbd><span>Navigate Expression List</span></div>
                             <div class="shortcut"><kbd>Ctrl+Enter</kbd><span>Update Current Ticker Data</span></div>
                             <div class="shortcut"><kbd>Ctrl+Shift+Enter</kbd><span>Update All Ticker Data</span></div>
                         </div>
@@ -98,11 +111,19 @@
                             <li><strong>Market Overlay:</strong> Compare with SPY performance</li>
                             <li><strong>Real-time Crosshairs:</strong> Hover to see precise values</li>
                             <li><strong>Volume Chart:</strong> Trading volume visualization</li>
+                            <li><strong>Expression Results:</strong> DSL expressions shown as charts or values</li>
+                            <li><strong>Expression List:</strong> Left sidebar shows all executed expressions</li>
                         </ul>
                     </div>
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- Blink DSL Input Popup -->
+    <div id="dsl-popup" class="dsl-popup hidden">
+        <div id="dsl-input" class="dsl-input" contenteditable="true" spellcheck="false" data-placeholder="Enter expression..."></div>
+        <div id="dsl-result" class="dsl-result hidden"></div>
     </div>
 
     <script src="technical-indicators.js"></script>
