@@ -551,7 +551,7 @@ app.post('/api/parrot/run', (req, res) => {
 });
 
 // API endpoint to verify Parrot result against BQN result
-// Runs the Parrot executable with the close prices and compares to the stored BQN result
+// Runs the Parrot executable with the data (close prices or volume) and compares to the stored BQN result
 app.post('/api/parrot/verify', (req, res) => {
     const { expression, ticker, dataLength, bqnResult } = req.body;
 
@@ -585,34 +585,39 @@ app.post('/api/parrot/verify', (req, res) => {
         });
     }
 
-    // Read close prices from CSV
-    const closePrices = [];
+    // Determine which column to read based on expression
+    // 'v' or 'V' means volume, 'c' or 'C' means close prices
+    const useVolume = /[vV]/.test(expression) && !/[cC]/.test(expression);
+    const columnName = useVolume ? 'Volume' : 'Close';
+
+    // Read data from CSV
+    const dataValues = [];
 
     fs.createReadStream(csvPath)
         .pipe(csv())
         .on('data', (row) => {
-            const close = parseFloat(row.Close);
-            if (!isNaN(close)) {
-                closePrices.push(close);
+            const value = parseFloat(row[columnName]);
+            if (!isNaN(value)) {
+                dataValues.push(value);
             }
         })
         .on('end', () => {
-            // Take the last dataLength prices
-            const prices = closePrices.slice(-parseInt(dataLength));
-            const priceStr = prices.join(' ');
+            // Take the last dataLength values
+            const values = dataValues.slice(-parseInt(dataLength));
+            const valueStr = values.join(' ');
 
-            console.log(`🔍 Verifying Parrot result for: ${expression} (${prices.length} prices)`);
+            console.log(`🔍 Verifying Parrot result for: ${expression} (${values.length} ${columnName} values)`);
 
             // Run the Parrot executable
-            const parrotProcess = spawn(executable, [prices.length.toString()], {
+            const parrotProcess = spawn(executable, [values.length.toString()], {
                 cwd: path.join(__dirname, '..', 'blink-dsl')
             });
 
             let parrotOutput = '';
             let parrotError = '';
 
-            // Send prices to stdin
-            parrotProcess.stdin.write(priceStr);
+            // Send data to stdin
+            parrotProcess.stdin.write(valueStr);
             parrotProcess.stdin.end();
 
             parrotProcess.stdout.on('data', (data) => {
