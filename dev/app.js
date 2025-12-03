@@ -91,6 +91,7 @@ class StockApp {
         this.expressions = []; // Array of {id, expression, result, resultType: 'scalar'|'array', resultData}
         this.currentExpressionIndex = 0;
         this.expressionResultChart = null;
+        this.editingExpressionIndex = null; // Track which expression is being edited (null = creating new)
 
         // Stock screening state
         this.screeningResults = null;
@@ -213,6 +214,9 @@ class StockApp {
             } else if (e.key === 'd' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.deleteCurrentExpression();
+            } else if (e.key === 'e' && e.target !== tickerInput) {
+                e.preventDefault();
+                this.editCurrentExpression();
             } else if (e.key === 'h' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.toggleHelpPopup();
@@ -477,6 +481,8 @@ class StockApp {
         if (dslPopup) {
             dslPopup.classList.add('hidden');
             this.isDslVisible = false;
+            // Clear editing state
+            this.editingExpressionIndex = null;
             // Clear the input and result
             const dslInput = document.getElementById('dsl-input');
             if (dslInput) {
@@ -528,31 +534,57 @@ class StockApp {
                 const output = result.output.trim();
                 const parsed = this.parseExpressionResult(output);
 
-                // Add to expression list with Parrot compilation status
-                const expressionData = {
-                    id: Date.now(),
-                    expression: expression,
-                    result: output,
-                    resultType: parsed.type,
-                    resultData: parsed.data,
-                    ticker: this.currentTicker,  // Store ticker for recomputation
-                    dataLength: dataLength,       // Store data length
-                    parrotStatus: 'pending',      // Parrot compilation status: pending, compiling, compiled, failed
-                    parrotHash: null,             // Hash for tracking compilation
-                    parrotVerified: null          // Verification status: null (not verified), true (matches), false (mismatch)
-                };
+                // Check if we're editing an existing expression
+                if (this.editingExpressionIndex !== null) {
+                    // Update existing expression
+                    const existingExpression = this.expressions[this.editingExpressionIndex];
+                    existingExpression.expression = expression;
+                    existingExpression.result = output;
+                    existingExpression.resultType = parsed.type;
+                    existingExpression.resultData = parsed.data;
+                    existingExpression.ticker = this.currentTicker;
+                    existingExpression.dataLength = dataLength;
+                    existingExpression.parrotStatus = 'pending';
+                    existingExpression.parrotHash = null;
+                    existingExpression.parrotVerified = null;
 
-                this.expressions.push(expressionData);
-                this.currentExpressionIndex = this.expressions.length - 1;
+                    this.currentExpressionIndex = this.editingExpressionIndex;
 
-                // Update UI
-                this.updateExpressionList();
-                this.updateExpressionResultViewer();
+                    // Update UI
+                    this.updateExpressionList();
+                    this.updateExpressionResultViewer();
 
-                console.log('Expression added:', expressionData);
+                    console.log('Expression updated:', existingExpression);
 
-                // Start Parrot CUDA compilation in background
-                this.startParrotCompilation(expressionData);
+                    // Start Parrot CUDA compilation in background
+                    this.startParrotCompilation(existingExpression);
+                } else {
+                    // Add new expression to list with Parrot compilation status
+                    const expressionData = {
+                        id: Date.now(),
+                        expression: expression,
+                        result: output,
+                        resultType: parsed.type,
+                        resultData: parsed.data,
+                        ticker: this.currentTicker,  // Store ticker for recomputation
+                        dataLength: dataLength,       // Store data length
+                        parrotStatus: 'pending',      // Parrot compilation status: pending, compiling, compiled, failed
+                        parrotHash: null,             // Hash for tracking compilation
+                        parrotVerified: null          // Verification status: null (not verified), true (matches), false (mismatch)
+                    };
+
+                    this.expressions.push(expressionData);
+                    this.currentExpressionIndex = this.expressions.length - 1;
+
+                    // Update UI
+                    this.updateExpressionList();
+                    this.updateExpressionResultViewer();
+
+                    console.log('Expression added:', expressionData);
+
+                    // Start Parrot CUDA compilation in background
+                    this.startParrotCompilation(expressionData);
+                }
             } else {
                 console.error('Transpile error:', result.error);
                 alert(`Error: ${result.error}`);
@@ -1049,6 +1081,37 @@ class StockApp {
         // Update UI
         this.updateExpressionList();
         this.updateExpressionResultViewer();
+    }
+
+    editCurrentExpression() {
+        if (this.expressions.length === 0) return;
+
+        const currentExpression = this.expressions[this.currentExpressionIndex];
+        if (!currentExpression) return;
+
+        // Track that we're editing this expression
+        this.editingExpressionIndex = this.currentExpressionIndex;
+
+        // Show DSL popup with the expression loaded
+        this.showDslPopup();
+
+        // Load the expression into the DSL input
+        const dslInput = document.getElementById('dsl-input');
+        if (dslInput) {
+            setTimeout(() => {
+                // Use setColoredContent to apply colors immediately
+                this.setColoredContent(dslInput, currentExpression.expression);
+                // Move cursor to end
+                const range = document.createRange();
+                const sel = window.getSelection();
+                if (dslInput.childNodes.length > 0) {
+                    range.selectNodeContents(dslInput);
+                    range.collapse(false);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                }
+            }, 100);
+        }
     }
 
     async loadAvailableTickers() {
