@@ -1570,9 +1570,13 @@ class StockApp {
             // Calculate data length to use (current view's length)
             const dataLength = this.tradingDaysData.length;
 
-            // Compute expression for all tickers
+            // Concurrency limit for parallel requests
+            const CONCURRENCY = 16;
             const results = [];
-            for (const ticker of allTickers) {
+            let completed = 0;
+
+            // Helper to process a single ticker
+            const processTicker = async (ticker) => {
                 try {
                     const response = await fetch('/api/transpile', {
                         method: 'POST',
@@ -1588,7 +1592,7 @@ class StockApp {
 
                     if (!response.ok) {
                         console.error(`Failed to compute for ${ticker}`);
-                        continue;
+                        return null;
                     }
 
                     const result = await response.json();
@@ -1597,20 +1601,34 @@ class StockApp {
                         const output = result.output.trim();
                         const parsed = this.parseExpressionResult(output);
 
-                        if (parsed.type === 'scalar' && !isNaN(parsed.data)) {
-                            results.push({
+                        if (parsed.type === 'scalar' && typeof parsed.data === 'number' && isFinite(parsed.data)) {
+                            return {
                                 ticker: ticker,
                                 value: parsed.data
-                            });
+                            };
                         }
                     }
-
-                    // Update progress
-                    statusText.textContent = `Screening... ${results.length}/${allTickers.length} complete`;
-
+                    return null;
                 } catch (error) {
                     console.error(`Error screening ${ticker}:`, error);
+                    return null;
                 }
+            };
+
+            // Process tickers in parallel batches
+            for (let i = 0; i < allTickers.length; i += CONCURRENCY) {
+                const batch = allTickers.slice(i, i + CONCURRENCY);
+                const batchResults = await Promise.all(batch.map(processTicker));
+
+                // Collect valid results
+                for (const result of batchResults) {
+                    if (result !== null) {
+                        results.push(result);
+                    }
+                }
+
+                completed += batch.length;
+                statusText.textContent = `Screening... ${completed}/${allTickers.length} (${results.length} valid)`;
             }
 
             // Sort results by value (highest to lowest)
@@ -1671,7 +1689,10 @@ class StockApp {
             // Create value span showing the screening result
             const valueSpan = document.createElement('span');
             valueSpan.className = 'ticker-percentage';
-            valueSpan.textContent = ` (${result.value.toFixed(2)})`;
+            const displayValue = typeof result.value === 'number' && isFinite(result.value)
+                ? result.value.toFixed(2)
+                : String(result.value);
+            valueSpan.textContent = ` (${displayValue})`;
 
             // Color based on value (positive = green/blue, negative = red/blue)
             if (this.blueMode) {
