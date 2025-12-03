@@ -68,7 +68,8 @@ class StockApp {
             'delta': { symbol: '△', type: 'modifier' },
             'div': { symbol: '÷', type: 'binary' },
             '*': { symbol: '×', type: 'binary' },
-            '-': { symbol: '-', type: 'unary' }
+            '-': { symbol: '-', type: 'unary' },
+            '~': { symbol: '~', type: 'combinator' }
         };
 
         // Expression list and results
@@ -130,9 +131,9 @@ class StockApp {
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
-            // Don't process shortcuts if DSL popup is visible (except Escape and Ctrl+Enter)
+            // Don't process shortcuts if DSL popup is visible (except Ctrl+/ to close and Ctrl+Enter)
             if (this.isDslVisible) {
-                if (e.key === 'Escape') {
+                if (e.ctrlKey && e.key === '/') {
                     e.preventDefault();
                     this.hideDslPopup();
                 }
@@ -193,6 +194,9 @@ class StockApp {
             } else if (e.key === 'r' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.resetTickerList();
+            } else if (e.key === 'd' && e.target !== tickerInput) {
+                e.preventDefault();
+                this.deleteCurrentExpression();
             } else if (e.key === 'h' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.toggleHelpPopup();
@@ -204,10 +208,7 @@ class StockApp {
                 this.toggleFullscreen();
             } else if (e.key === 'Escape') {
                 e.preventDefault();
-                if (this.isDslVisible) {
-                    // Close DSL popup if open
-                    this.hideDslPopup();
-                } else if (this.isHelpVisible) {
+                if (this.isHelpVisible) {
                     // Close help popup if open
                     this.hideHelpPopup();
                 } else if (this.isZoomSelecting) {
@@ -877,6 +878,29 @@ class StockApp {
 
         // Calculate new index with wrapping
         this.currentExpressionIndex = (this.currentExpressionIndex + direction + this.expressions.length) % this.expressions.length;
+
+        // Update UI
+        this.updateExpressionList();
+        this.updateExpressionResultViewer();
+    }
+
+    deleteCurrentExpression() {
+        if (this.expressions.length === 0) return;
+
+        // Remove the current expression
+        this.expressions.splice(this.currentExpressionIndex, 1);
+
+        // Adjust current index if needed
+        if (this.expressions.length === 0) {
+            this.currentExpressionIndex = 0;
+            // Hide expression sidebar when no expressions left
+            const expressionSidebar = document.querySelector('.expression-sidebar');
+            if (expressionSidebar) {
+                expressionSidebar.classList.remove('visible');
+            }
+        } else if (this.currentExpressionIndex >= this.expressions.length) {
+            this.currentExpressionIndex = this.expressions.length - 1;
+        }
 
         // Update UI
         this.updateExpressionList();
@@ -1634,6 +1658,18 @@ class StockApp {
         // Regenerate ticker list with normal percentage display
         await this.loadAvailableTickers();
         this.updateTickerSelection();
+
+        // Clear expressions and hide expression list
+        this.expressions = [];
+        this.currentExpressionIndex = 0;
+        this.updateExpressionList();
+        this.updateExpressionResultViewer();
+
+        // Hide expression sidebar
+        const expressionSidebar = document.querySelector('.expression-sidebar');
+        if (expressionSidebar) {
+            expressionSidebar.classList.remove('visible');
+        }
 
         // Restore status bar
         this.updateStatusBar();

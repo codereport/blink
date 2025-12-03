@@ -529,8 +529,8 @@ body {
 }
 
 .dsl-input {
-    width: 800px;
-    max-width: 85%;
+    width: 1000px;
+    max-width: 90%;
     background-color: #1a1a1a;
     border: 2px solid #007acc;
     border-radius: 20px;
@@ -547,8 +547,8 @@ body {
 }
 
 .dsl-result {
-    width: 800px;
-    max-width: 85%;
+    width: 1000px;
+    max-width: 90%;
     background-color: #2a2a2a;
     border: 2px solid #50fa7b;
     border-radius: 15px;
@@ -587,6 +587,10 @@ body {
 
 .dsl-modifier {
     color: #f1fa8c !important;  /* Dracula Yellow - modifiers */
+}
+
+.dsl-combinator {
+    color: #ffb86c !important;  /* Dracula Orange - combinators */
 }
 
 .dsl-text {
