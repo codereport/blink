@@ -69,8 +69,19 @@ class StockApp {
             'div': { symbol: '÷', type: 'binary' },
             '*': { symbol: '×', type: 'binary' },
             '-': { symbol: '-', type: 'unary' },
-            '~': { symbol: '~', type: 'combinator' }
+            'swap': { symbol: '⍨', type: 'combinator' }
         };
+
+        // Backtick key mappings for quick symbol entry
+        this.backtickMappings = {
+            'z': '⊂',
+            'x': '⊃',
+            'h': '△',
+            '=': '÷',
+            '-': '×',
+            'T': '⍨'
+        };
+        this.isBacktickMode = false;
 
         // Expression list and results
         this.expressions = []; // Array of {id, expression, result, resultType: 'scalar'|'array', resultData}
@@ -308,6 +319,22 @@ class StockApp {
                 } else if (e.key === 'Enter') {
                     e.preventDefault();
                     this.processDslExpression();
+                } else if (e.key === '`') {
+                    // Enter backtick mode - don't show the backtick
+                    e.preventDefault();
+                    this.isBacktickMode = true;
+                } else if (this.isBacktickMode) {
+                    // In backtick mode, check if this key maps to a symbol
+                    // Ignore modifier keys (Shift, Ctrl, Alt, Meta) - wait for the actual key
+                    if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) {
+                        return;
+                    }
+                    e.preventDefault();
+                    this.isBacktickMode = false;
+                    const symbol = this.backtickMappings[e.key];
+                    if (symbol) {
+                        this.insertSymbolAtCursor(dslInput, symbol);
+                    }
                 }
                 // All other keys pass through normally for typing
             });
@@ -664,6 +691,21 @@ class StockApp {
             sel.removeAllRanges();
             sel.addRange(range);
         }
+    }
+
+    insertSymbolAtCursor(element, symbol) {
+        // Get current text and cursor position
+        const text = this.getTextContent(element);
+        const cursorPos = this.getCursorPosition(element);
+
+        // Insert symbol at cursor position
+        const newText = text.slice(0, cursorPos) + symbol + text.slice(cursorPos);
+
+        // Update content with coloring
+        this.setColoredContent(element, newText);
+
+        // Restore cursor position after the inserted symbol
+        this.setCursorPosition(element, cursorPos + symbol.length);
     }
 
     translateDslKeywords() {
