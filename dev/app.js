@@ -60,6 +60,10 @@ class StockApp {
         // Help popup state
         this.isHelpVisible = false;
 
+        // Company info popup state
+        this.isCompanyInfoVisible = false;
+        this.companyInfo = null;
+
         // DSL popup state
         this.isDslVisible = false;
         this.dslMappings = {
@@ -99,6 +103,7 @@ class StockApp {
         this.setupEventListeners();
         this.setupHelpPopup(); // Setup help popup event listeners
         this.setupDslPopup(); // Setup DSL popup event listeners
+        this.setupCompanyInfoPopup(); // Setup company info popup event listeners
         await this.loadAvailableTickers(); // Load tickers dynamically first
         this.updateTickerSelection(); // Initialize ticker selection UI
         this.loadData(this.currentTicker);
@@ -211,6 +216,9 @@ class StockApp {
             } else if (e.key === 'h' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.toggleHelpPopup();
+            } else if (e.key === 'i' && e.target !== tickerInput) {
+                e.preventDefault();
+                this.toggleCompanyInfo();
             } else if (e.key === '/' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.showDslPopup();
@@ -222,6 +230,9 @@ class StockApp {
                 if (this.isHelpVisible) {
                     // Close help popup if open
                     this.hideHelpPopup();
+                } else if (this.isCompanyInfoVisible) {
+                    // Close company info popup if open
+                    this.hideCompanyInfo();
                 } else if (this.isZoomSelecting) {
                     // Cancel zoom selection
                     this.isZoomSelecting = false;
@@ -290,6 +301,97 @@ class StockApp {
             this.isHelpVisible = false;
             // Restore body scrolling
             document.body.style.overflow = '';
+        }
+    }
+
+    async toggleCompanyInfo() {
+        if (this.isCompanyInfoVisible) {
+            this.hideCompanyInfo();
+        } else {
+            await this.showCompanyInfo();
+        }
+    }
+
+    async showCompanyInfo() {
+        const popup = document.getElementById('company-info-popup');
+        if (!popup) return;
+
+        // Show loading state
+        popup.classList.remove('hidden');
+        this.isCompanyInfoVisible = true;
+        document.body.style.overflow = 'hidden';
+
+        const content = popup.querySelector('.company-info-body');
+        if (content) {
+            content.innerHTML = '<div class="company-info-loading">Loading company info...</div>';
+        }
+
+        try {
+            const response = await fetch(`/api/company/${this.currentTicker}`);
+            const data = await response.json();
+
+            if (data.error) {
+                content.innerHTML = `<div class="company-info-error">Error: ${data.error}</div>`;
+                return;
+            }
+
+            this.companyInfo = data;
+            content.innerHTML = `
+                <div class="company-info-field">
+                    <span class="company-info-label">Company</span>
+                    <span class="company-info-value">${data.name || 'N/A'}</span>
+                </div>
+                <div class="company-info-field">
+                    <span class="company-info-label">Industry</span>
+                    <span class="company-info-value">${data.industry || 'N/A'}</span>
+                </div>
+                <div class="company-info-field">
+                    <span class="company-info-label">Sector</span>
+                    <span class="company-info-value">${data.sector || 'N/A'}</span>
+                </div>
+                <div class="company-info-description">
+                    ${data.description || 'No description available.'}
+                </div>
+            `;
+        } catch (error) {
+            content.innerHTML = `<div class="company-info-error">Failed to fetch company info: ${error.message}</div>`;
+        }
+    }
+
+    hideCompanyInfo() {
+        const popup = document.getElementById('company-info-popup');
+        if (popup) {
+            popup.classList.add('hidden');
+            this.isCompanyInfoVisible = false;
+            document.body.style.overflow = '';
+        }
+    }
+
+    setupCompanyInfoPopup() {
+        // Setup close button handler
+        const closeBtn = document.querySelector('.company-info-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                this.hideCompanyInfo();
+            });
+        }
+
+        // Setup backdrop click to close
+        const popup = document.getElementById('company-info-popup');
+        if (popup) {
+            popup.addEventListener('click', (e) => {
+                if (e.target === popup) {
+                    this.hideCompanyInfo();
+                }
+            });
+        }
+
+        // Prevent clicks inside content from closing
+        const content = document.querySelector('.company-info-content');
+        if (content) {
+            content.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
         }
     }
 

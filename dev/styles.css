@@ -597,6 +597,123 @@ body {
     color: #e0e0e0 !important;  /* White for regular text */
 }
 
+/* Company Info Popup Styles */
+.company-info-popup {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.85);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    backdrop-filter: blur(6px);
+}
+
+.company-info-popup.hidden {
+    display: none;
+}
+
+.company-info-content {
+    background: linear-gradient(145deg, #1a1a2e 0%, #16213e 100%);
+    border: 1px solid #0f3460;
+    border-radius: 12px;
+    max-width: 600px;
+    width: 90%;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.company-info-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 25px;
+    border-bottom: 1px solid #0f3460;
+    background: linear-gradient(90deg, #0f3460 0%, #1a1a2e 100%);
+    border-radius: 12px 12px 0 0;
+}
+
+.company-info-header h3 {
+    margin: 0;
+    color: #e94560;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.company-info-close {
+    font-size: 28px;
+    color: #666;
+    cursor: pointer;
+    transition: color 0.2s, transform 0.2s;
+    user-select: none;
+    line-height: 1;
+}
+
+.company-info-close:hover {
+    color: #e94560;
+    transform: scale(1.1);
+}
+
+.company-info-body {
+    padding: 25px;
+}
+
+.company-info-field {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(15, 52, 96, 0.5);
+}
+
+.company-info-field:last-of-type {
+    border-bottom: none;
+}
+
+.company-info-label {
+    color: #8892b0;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 500;
+}
+
+.company-info-value {
+    color: #ccd6f6;
+    font-size: 16px;
+    font-weight: 500;
+    text-align: right;
+    max-width: 65%;
+}
+
+.company-info-description {
+    margin-top: 20px;
+    padding: 18px;
+    background: rgba(15, 52, 96, 0.3);
+    border-radius: 8px;
+    color: #a8b2d1;
+    font-size: 14px;
+    line-height: 1.7;
+    border-left: 3px solid #e94560;
+}
+
+.company-info-loading {
+    text-align: center;
+    color: #8892b0;
+    padding: 40px;
+    font-size: 16px;
+}
+
+.company-info-error {
+    text-align: center;
+    color: #e94560;
+    padding: 40px;
+    font-size: 14px;
+}
+
 /* Responsive design */
 @media (max-width: 1200px) {
     .header {

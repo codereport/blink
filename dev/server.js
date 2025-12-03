@@ -123,6 +123,47 @@ app.get('/api/stock/:ticker', (req, res) => {
         });
 });
 
+// API endpoint to get company info
+app.get('/api/company/:ticker', (req, res) => {
+    const ticker = req.params.ticker.toUpperCase();
+    const pythonScript = path.join(__dirname, '..', 'get_company_info.py');
+
+    console.log(`Fetching company info for ${ticker}...`);
+
+    // Run the Python script with the ticker as argument
+    const pythonProcess = spawn('python3', [pythonScript, ticker], {
+        cwd: path.join(__dirname, '..')
+    });
+
+    let output = '';
+    let errorOutput = '';
+
+    pythonProcess.stdout.on('data', (data) => {
+        output += data.toString();
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+        errorOutput += data.toString();
+    });
+
+    pythonProcess.on('close', (code) => {
+        if (code === 0) {
+            try {
+                const info = JSON.parse(output);
+                res.json(info);
+            } catch (e) {
+                res.status(500).json({ error: 'Failed to parse company info' });
+            }
+        } else {
+            res.status(500).json({ error: errorOutput || 'Failed to fetch company info' });
+        }
+    });
+
+    pythonProcess.on('error', (error) => {
+        res.status(500).json({ error: error.message });
+    });
+});
+
 // API endpoint to check if data is up to date
 app.get('/api/stock/:ticker/status', (req, res) => {
     const ticker = req.params.ticker.toUpperCase();

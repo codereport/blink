@@ -75,6 +75,7 @@
                             <div class="shortcut"><kbd>F</kbd><span>Toggle Fullscreen</span></div>
                             <div class="shortcut"><kbd>Space</kbd><span>New Ticker Input</span></div>
                             <div class="shortcut"><kbd>H</kbd><span>Toggle This Help</span></div>
+                            <div class="shortcut"><kbd>I</kbd><span>Toggle Company Info</span></div>
                             <div class="shortcut"><kbd>T</kbd><span>Toggle Technical Indicators</span></div>
                             <div class="shortcut"><kbd>B</kbd><span>Toggle Blue Line Mode</span></div>
                             <div class="shortcut"><kbd>M</kbd><span>Toggle Market Overlay (SPY)</span></div>
@@ -131,6 +132,19 @@
     <div id="dsl-popup" class="dsl-popup hidden">
         <div id="dsl-input" class="dsl-input" contenteditable="true" spellcheck="false" data-placeholder="Enter expression..."></div>
         <div id="dsl-result" class="dsl-result hidden"></div>
+    </div>
+
+    <!-- Company Info Popup -->
+    <div id="company-info-popup" class="company-info-popup hidden">
+        <div class="company-info-content">
+            <div class="company-info-header">
+                <h3>🏢 Company Info</h3>
+                <span class="company-info-close">&times;</span>
+            </div>
+            <div class="company-info-body">
+                <!-- Content loaded dynamically -->
+            </div>
+        </div>
     </div>
 
     <script src="technical-indicators.js"></script>
