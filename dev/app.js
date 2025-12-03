@@ -64,6 +64,7 @@ class StockApp {
         this.isDslVisible = false;
         this.dslMappings = {
             'first': { symbol: '⊃', type: 'unary' },
+            'last': { symbol: '⊂', type: 'unary' },
             'delta': { symbol: '△', type: 'modifier' },
             'div': { symbol: '÷', type: 'binary' },
             '*': { symbol: '×', type: 'binary' },
@@ -397,7 +398,7 @@ class StockApp {
                 const output = result.output.trim();
                 const parsed = this.parseExpressionResult(output);
 
-                // Add to expression list
+                // Add to expression list with Parrot compilation status
                 const expressionData = {
                     id: Date.now(),
                     expression: expression,
@@ -405,7 +406,10 @@ class StockApp {
                     resultType: parsed.type,
                     resultData: parsed.data,
                     ticker: this.currentTicker,  // Store ticker for recomputation
-                    dataLength: dataLength        // Store data length
+                    dataLength: dataLength,       // Store data length
+                    parrotStatus: 'pending',      // Parrot compilation status: pending, compiling, compiled, failed
+                    parrotHash: null,             // Hash for tracking compilation
+                    parrotVerified: null          // Verification status: null (not verified), true (matches), false (mismatch)
                 };
 
                 this.expressions.push(expressionData);
@@ -416,6 +420,9 @@ class StockApp {
                 this.updateExpressionResultViewer();
 
                 console.log('Expression added:', expressionData);
+
+                // Start Parrot CUDA compilation in background
+                this.startParrotCompilation(expressionData);
             } else {
                 console.error('Transpile error:', result.error);
                 alert(`Error: ${result.error}`);
@@ -427,6 +434,139 @@ class StockApp {
         }
 
         this.hideDslPopup();
+    }
+
+    async startParrotCompilation(expressionData) {
+        // Start Parrot CUDA compilation in background
+        try {
+            expressionData.parrotStatus = 'compiling';
+            this.updateExpressionList();
+
+            const response = await fetch('/api/parrot/compile', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    expression: expressionData.expression
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            expressionData.parrotHash = result.hash;
+
+            if (result.cached) {
+                // Already compiled
+                expressionData.parrotStatus = 'compiled';
+                this.updateExpressionList();
+                console.log(`🚀 Parrot already compiled: ${result.hash}`);
+
+                // Verify the result against BQN
+                this.verifyParrotResult(expressionData);
+            } else {
+                // Poll for compilation status
+                this.pollParrotCompilation(expressionData);
+            }
+
+        } catch (error) {
+            console.error('Error starting Parrot compilation:', error);
+            expressionData.parrotStatus = 'failed';
+            this.updateExpressionList();
+        }
+    }
+
+    async pollParrotCompilation(expressionData) {
+        // Poll for compilation status every 2 seconds
+        // Use status-by-expr since hash is based on generated code, not expression
+        const pollInterval = setInterval(async () => {
+            try {
+                const response = await fetch('/api/parrot/status-by-expr', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        expression: expressionData.expression
+                    })
+                });
+                const result = await response.json();
+
+                if (result.status === 'compiled') {
+                    expressionData.parrotStatus = 'compiled';
+                    expressionData.parrotHash = result.hash;
+                    this.updateExpressionList();
+                    console.log(`✅ Parrot compilation complete: ${result.hash}`);
+                    clearInterval(pollInterval);
+
+                    // Now verify the result against BQN
+                    this.verifyParrotResult(expressionData);
+                } else if (result.status === 'failed') {
+                    expressionData.parrotStatus = 'failed';
+                    expressionData.parrotHash = result.hash;
+                    this.updateExpressionList();
+                    console.error(`❌ Parrot compilation failed: ${result.error}`);
+                    clearInterval(pollInterval);
+                }
+                // If still compiling, continue polling
+            } catch (error) {
+                console.error('Error polling Parrot status:', error);
+                clearInterval(pollInterval);
+            }
+        }, 2000);
+
+        // Stop polling after 5 minutes
+        setTimeout(() => {
+            clearInterval(pollInterval);
+            if (expressionData.parrotStatus === 'compiling') {
+                expressionData.parrotStatus = 'failed';
+                this.updateExpressionList();
+                console.error('Parrot compilation timed out');
+            }
+        }, 5 * 60 * 1000);
+    }
+
+    async verifyParrotResult(expressionData) {
+        // Verify Parrot CUDA result against BQN result
+        try {
+            const response = await fetch('/api/parrot/verify', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    expression: expressionData.expression,
+                    ticker: expressionData.ticker,
+                    dataLength: expressionData.dataLength,
+                    bqnResult: expressionData.resultData
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            if (result.success) {
+                expressionData.parrotVerified = result.verified;
+                console.log(`${result.verified ? '✅' : '❌'} Parrot verification: ${result.verified ? 'MATCH' : 'MISMATCH'}`);
+                console.log(`   BQN: ${result.bqnResult}, Parrot: ${result.parrotResult}`);
+            } else {
+                expressionData.parrotVerified = false;
+                console.error(`❌ Parrot verification failed: ${result.error}`);
+            }
+
+            this.updateExpressionList();
+
+        } catch (error) {
+            console.error('Error verifying Parrot result:', error);
+            expressionData.parrotVerified = false;
+            this.updateExpressionList();
+        }
     }
 
     parseExpressionResult(output) {
@@ -1083,6 +1223,51 @@ class StockApp {
                 item.classList.add('active');
             }
             item.dataset.index = index;
+
+            // Parrot status container in top-right corner (compilation + verification)
+            const parrotStatus = document.createElement('div');
+            parrotStatus.className = 'parrot-status';
+
+            // First emoji: compilation status
+            let compilationEmoji = '';
+            let compilationTitle = '';
+            switch (expr.parrotStatus) {
+                case 'compiling':
+                    compilationEmoji = '🟡';
+                    compilationTitle = 'Compiling CUDA...';
+                    break;
+                case 'compiled':
+                    compilationEmoji = '✅';
+                    compilationTitle = 'CUDA compiled';
+                    break;
+                case 'failed':
+                    compilationEmoji = '❌';
+                    compilationTitle = 'CUDA compilation failed';
+                    break;
+                default:
+                    compilationEmoji = '';
+                    break;
+            }
+
+            // Second emoji: verification status (only shown after compilation)
+            let verificationEmoji = '';
+            let verificationTitle = '';
+            if (expr.parrotStatus === 'compiled') {
+                if (expr.parrotVerified === true) {
+                    verificationEmoji = '✅';
+                    verificationTitle = 'Results match BQN';
+                } else if (expr.parrotVerified === false) {
+                    verificationEmoji = '❌';
+                    verificationTitle = 'Results DO NOT match BQN';
+                } else {
+                    verificationEmoji = '⏳';
+                    verificationTitle = 'Verifying...';
+                }
+            }
+
+            parrotStatus.textContent = compilationEmoji + verificationEmoji;
+            parrotStatus.title = [compilationTitle, verificationTitle].filter(t => t).join(' | ');
+            item.appendChild(parrotStatus);
 
             const exprText = document.createElement('div');
             exprText.className = 'expr-text';
