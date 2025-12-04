@@ -312,6 +312,21 @@ app.post('/api/parrot/compile', (req, res) => {
 
     const parrotScript = path.join(__dirname, '..', 'blink-dsl', 'parrot_transpile.py');
 
+    // Check if this expression is already compiled (look through status map)
+    for (const [hash, status] of parrotCompilationStatus.entries()) {
+        if (!hash.startsWith('compiling:') && !hash.startsWith('failed:') && 
+            status.expression === expression && status.status === 'compiled') {
+            console.log(`✅ Parrot expression already compiled: ${hash}`);
+            return res.json({
+                success: true,
+                hash: hash,
+                status: 'compiled',
+                cached: true,
+                executable: status.executable
+            });
+        }
+    }
+
     // Check if this expression is already being compiled (use expression as temp key)
     const tempKey = `compiling:${expression}`;
     if (parrotCompilationStatus.get(tempKey)) {
@@ -691,6 +706,115 @@ app.post('/api/parrot/verify', (req, res) => {
             res.json({
                 success: false,
                 verified: false,
+                error: error.message
+            });
+        });
+});
+
+// API endpoint to screen a ticker with a compiled Parrot expression (CUDA)
+// Similar to verify but just returns the result without comparing to BQN
+app.post('/api/parrot/screen', (req, res) => {
+    const { expression, ticker, dataLength } = req.body;
+
+    if (!expression || !ticker || !dataLength) {
+        return res.status(400).json({ error: 'Expression, ticker, and dataLength required' });
+    }
+
+    // Look up by expression since hash is based on generated code
+    let executable = null;
+    for (const [hash, status] of parrotCompilationStatus.entries()) {
+        if (!hash.startsWith('compiling:') && !hash.startsWith('failed:') && status.expression === expression && status.status === 'compiled') {
+            executable = status.executable;
+            break;
+        }
+    }
+
+    if (!executable) {
+        return res.json({
+            success: false,
+            error: 'Parrot expression not compiled'
+        });
+    }
+
+    const csvPath = path.join(__dirname, '..', 'historical_data', `${ticker}.csv`);
+
+    if (!fs.existsSync(csvPath)) {
+        return res.json({
+            success: false,
+            error: `Data file not found for ticker: ${ticker}`
+        });
+    }
+
+    // Determine which column to read based on expression
+    // 'v' or 'V' means volume, 'c' or 'C' means close prices
+    const useVolume = /[vV]/.test(expression) && !/[cC]/.test(expression);
+    const columnName = useVolume ? 'Volume' : 'Close';
+
+    // Read data from CSV
+    const dataValues = [];
+
+    fs.createReadStream(csvPath)
+        .pipe(csv())
+        .on('data', (row) => {
+            const value = parseFloat(row[columnName]);
+            if (!isNaN(value)) {
+                dataValues.push(value);
+            }
+        })
+        .on('end', () => {
+            // Take the last dataLength values
+            const values = dataValues.slice(-parseInt(dataLength));
+            const valueStr = values.join(' ');
+
+            // Run the Parrot executable
+            const parrotProcess = spawn(executable, [values.length.toString()], {
+                cwd: path.join(__dirname, '..', 'blink-dsl')
+            });
+
+            let parrotOutput = '';
+            let parrotError = '';
+
+            // Send data to stdin
+            parrotProcess.stdin.write(valueStr);
+            parrotProcess.stdin.end();
+
+            parrotProcess.stdout.on('data', (data) => {
+                parrotOutput += data.toString();
+            });
+
+            parrotProcess.stderr.on('data', (data) => {
+                parrotError += data.toString();
+            });
+
+            parrotProcess.on('close', (code) => {
+                if (code !== 0) {
+                    return res.json({
+                        success: false,
+                        error: parrotError || 'Parrot execution failed'
+                    });
+                }
+
+                // Parse result
+                const result = parrotOutput.trim();
+                const value = parseFloat(result);
+
+                res.json({
+                    success: true,
+                    result: isNaN(value) ? result : value,
+                    ticker: ticker
+                });
+            });
+
+            parrotProcess.on('error', (error) => {
+                res.json({
+                    success: false,
+                    error: error.message
+                });
+            });
+        })
+        .on('error', (error) => {
+            res.json({
+                success: false,
                 error: error.message
             });
         });

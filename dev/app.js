@@ -206,6 +206,9 @@ class StockApp {
             } else if (e.key === 'm' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.toggleMarketOverlay();
+            } else if (e.ctrlKey && e.key === 's' && e.target !== tickerInput) {
+                e.preventDefault();
+                this.screenStocksByCuda();
             } else if (e.key === 's' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.screenStocksByExpression();
@@ -2073,6 +2076,169 @@ class StockApp {
         } catch (error) {
             console.error('Error during screening:', error);
             alert(`Screening failed: ${error.message}`);
+            statusText.textContent = originalStatus;
+        }
+    }
+
+    async screenStocksByCuda() {
+        // Check if we have expressions and current expression is scalar
+        if (this.expressions.length === 0) {
+            alert('No expressions to screen with. Create an expression first.');
+            return;
+        }
+
+        const currentExpr = this.expressions[this.currentExpressionIndex];
+        if (!currentExpr) {
+            alert('No expression selected.');
+            return;
+        }
+
+        if (currentExpr.resultType !== 'scalar') {
+            alert('CUDA screening only works with scalar (single value) expressions.\nThe current expression returns an array.');
+            return;
+        }
+
+        // Get the full expression (handles prefix chains recursively)
+        const fullExpression = this.buildFullExpression(currentExpr);
+        console.log('CUDA screening stocks with expression:', fullExpression);
+
+        // Show loading indicator
+        const statusText = document.getElementById('status-text');
+        const originalStatus = statusText.textContent;
+
+        try {
+            // First, ensure the expression is compiled for CUDA
+            statusText.textContent = 'Compiling expression for CUDA...';
+
+            const compileResponse = await fetch('/api/parrot/compile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ expression: fullExpression })
+            });
+
+            if (!compileResponse.ok) {
+                throw new Error('Failed to start CUDA compilation');
+            }
+
+            // Wait for compilation to complete (poll status)
+            let compiled = false;
+            let attempts = 0;
+            const maxAttempts = 60; // 30 seconds max wait
+
+            // Check initial compile response - it might already be cached/compiled
+            const compileResult = await compileResponse.json();
+            console.log('CUDA compile response:', compileResult);
+            
+            if (compileResult.status === 'compiled' || compileResult.cached) {
+                // Already compiled, no need to wait
+                compiled = true;
+                console.log('CUDA expression already compiled (cached)');
+            }
+
+            while (!compiled && attempts < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                attempts++;
+
+                const statusResponse = await fetch('/api/parrot/status-by-expr', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ expression: fullExpression })
+                });
+
+                if (statusResponse.ok) {
+                    const statusResult = await statusResponse.json();
+                    console.log('CUDA status check:', statusResult);
+                    if (statusResult.status === 'compiled') {
+                        compiled = true;
+                    } else if (statusResult.status === 'failed') {
+                        throw new Error(`CUDA compilation failed: ${statusResult.error || 'Unknown error'}`);
+                    }
+                    // If still compiling, continue waiting
+                }
+            }
+
+            if (!compiled) {
+                throw new Error('CUDA compilation timed out');
+            }
+
+            // Load full ticker list for screening
+            statusText.textContent = 'Loading ticker list for CUDA screening...';
+            const response = await fetch('/api/tickers?full=true');
+            if (!response.ok) {
+                throw new Error('Failed to load full ticker list');
+            }
+            const allTickers = await response.json();
+
+            statusText.textContent = `CUDA screening ${allTickers.length} stocks...`;
+
+            // Calculate data length to use (current view's length)
+            const dataLength = this.tradingDaysData.length;
+
+            // Process tickers sequentially (CUDA is already fast, avoid overwhelming)
+            const results = [];
+            let completed = 0;
+
+            for (const ticker of allTickers) {
+                try {
+                    const screenResponse = await fetch('/api/parrot/screen', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            expression: fullExpression,
+                            ticker: ticker,
+                            dataLength: dataLength.toString()
+                        })
+                    });
+
+                    if (screenResponse.ok) {
+                        const result = await screenResponse.json();
+                        if (completed < 3) {
+                            console.log(`CUDA screen result for ${ticker}:`, result);
+                        }
+                        if (result.success && typeof result.result === 'number' && isFinite(result.result)) {
+                            results.push({
+                                ticker: ticker,
+                                value: result.result
+                            });
+                        } else if (!result.success) {
+                            if (completed < 3) {
+                                console.log(`CUDA screen failed for ${ticker}:`, result.error);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error(`CUDA screening error for ${ticker}:`, error);
+                }
+
+                completed++;
+                if (completed % 10 === 0) {
+                    statusText.textContent = `CUDA screening... ${completed}/${allTickers.length} (${results.length} valid)`;
+                }
+            }
+
+            // Sort results by value (highest to lowest)
+            results.sort((a, b) => b.value - a.value);
+
+            // Store screening results
+            this.screeningResults = results;
+            this.isScreeningMode = true;
+
+            // Update ticker list with sorted results
+            this.updateTickerListWithScreening(results);
+
+            // Select the top ranked stock
+            if (results.length > 0) {
+                this.selectTicker(results[0].ticker);
+            }
+
+            // Restore status
+            statusText.textContent = `CUDA screened ${results.length} stocks. Sorted by: ${currentExpr.expression}`;
+
+            console.log('CUDA screening complete:', results);
+
+        } catch (error) {
+            console.error('Error during CUDA screening:', error);
+            alert(`CUDA screening failed: ${error.message}`);
             statusText.textContent = originalStatus;
         }
     }
