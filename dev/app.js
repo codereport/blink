@@ -98,6 +98,10 @@ class StockApp {
         this.screeningResults = null;
         this.isScreeningMode = false;
 
+        // Ticker list pagination
+        this.tickerPageSize = 15;
+        this.tickerPageStart = 0;
+
         this.init();
     }
 
@@ -1181,6 +1185,28 @@ class StockApp {
         // Calculate new index with wrapping
         const newIndex = (currentIndex + direction + tickerList.length) % tickerList.length;
 
+        // Check if we need to change the visible page
+        const currentPageStart = this.tickerPageStart;
+        const currentPageEnd = currentPageStart + this.tickerPageSize;
+
+        // If navigating down past the visible page, show next page
+        if (direction > 0 && newIndex >= currentPageEnd) {
+            this.tickerPageStart = currentPageEnd;
+            if (this.tickerPageStart >= tickerList.length) {
+                this.tickerPageStart = 0; // Wrap to beginning
+            }
+            this.refreshTickerListDisplay();
+        }
+        // If navigating up past the visible page, show previous page
+        else if (direction < 0 && newIndex < currentPageStart) {
+            this.tickerPageStart = currentPageStart - this.tickerPageSize;
+            if (this.tickerPageStart < 0) {
+                // Wrap to last page
+                this.tickerPageStart = Math.floor((tickerList.length - 1) / this.tickerPageSize) * this.tickerPageSize;
+            }
+            this.refreshTickerListDisplay();
+        }
+
         // Update currentTickerIndex to match the original availableTickers array
         const newTicker = tickerList[newIndex];
         this.currentTickerIndex = this.availableTickers.indexOf(newTicker);
@@ -1288,50 +1314,15 @@ class StockApp {
         const tickerListContainer = document.querySelector('.ticker-list');
         tickerListContainer.innerHTML = '';
 
-        // Process all tickers in parallel for better performance
-        const tickerPromises = this.availableTickers.map(async (ticker) => {
-            const tickerItem = document.createElement('div');
-            tickerItem.className = 'ticker-item';
-            tickerItem.dataset.ticker = ticker;
+        // Reset pagination when regenerating
+        this.tickerPageStart = 0;
 
-            // Add click handler
-            tickerItem.addEventListener('click', () => {
-                this.selectTicker(ticker);
-            });
+        // Get the first page of tickers
+        const tickersToShow = this.availableTickers.slice(0, this.tickerPageSize);
 
-            // Get ticker display data including percentage for up-to-date stocks
-            const displayData = await this.getTickerDisplayData(ticker);
-
-            // Create ticker name span
-            const tickerNameSpan = document.createElement('span');
-            tickerNameSpan.className = 'ticker-name';
-            tickerNameSpan.textContent = displayData.tickerText;
-
-            // Create percentage span if there's percentage data
-            const percentageSpan = document.createElement('span');
-            percentageSpan.className = 'ticker-percentage';
-
-            if (displayData.percentageText) {
-                percentageSpan.textContent = ` (${displayData.percentageText})`;
-                percentageSpan.style.color = displayData.percentageColor;
-            }
-
-            // Clear existing content and add spans
-            tickerItem.innerHTML = '';
-            tickerItem.appendChild(tickerNameSpan);
-            tickerItem.appendChild(percentageSpan);
-
-            // Apply border color for up-to-date stocks
-            if (displayData.borderColor) {
-                tickerItem.style.borderColor = displayData.borderColor;
-                tickerItem.style.borderWidth = '2px';
-            } else {
-                // Reset border for outdated stocks
-                tickerItem.style.borderColor = '#2a2a2a';
-                tickerItem.style.borderWidth = '1px';
-            }
-
-            return tickerItem;
+        // Process tickers in parallel for better performance
+        const tickerPromises = tickersToShow.map(async (ticker) => {
+            return this.createTickerItem(ticker);
         });
 
         // Wait for all ticker items to be processed
@@ -1341,6 +1332,88 @@ class StockApp {
         tickerItems.forEach(item => {
             tickerListContainer.appendChild(item);
         });
+    }
+
+    async createTickerItem(ticker) {
+        const tickerItem = document.createElement('div');
+        tickerItem.className = 'ticker-item';
+        tickerItem.dataset.ticker = ticker;
+
+        // Add click handler
+        tickerItem.addEventListener('click', () => {
+            this.selectTicker(ticker);
+        });
+
+        // Get ticker display data including percentage for up-to-date stocks
+        const displayData = await this.getTickerDisplayData(ticker);
+
+        // Create ticker name span
+        const tickerNameSpan = document.createElement('span');
+        tickerNameSpan.className = 'ticker-name';
+        tickerNameSpan.textContent = displayData.tickerText;
+
+        // Create percentage span if there's percentage data
+        const percentageSpan = document.createElement('span');
+        percentageSpan.className = 'ticker-percentage';
+
+        if (displayData.percentageText) {
+            percentageSpan.textContent = ` (${displayData.percentageText})`;
+            percentageSpan.style.color = displayData.percentageColor;
+        }
+
+        // Clear existing content and add spans
+        tickerItem.innerHTML = '';
+        tickerItem.appendChild(tickerNameSpan);
+        tickerItem.appendChild(percentageSpan);
+
+        // Apply border color for up-to-date stocks
+        if (displayData.borderColor) {
+            tickerItem.style.borderColor = displayData.borderColor;
+            tickerItem.style.borderWidth = '2px';
+        } else {
+            // Reset border for outdated stocks
+            tickerItem.style.borderColor = '#2a2a2a';
+            tickerItem.style.borderWidth = '1px';
+        }
+
+        return tickerItem;
+    }
+
+    async refreshTickerListDisplay() {
+        const tickerListContainer = document.querySelector('.ticker-list');
+        if (!tickerListContainer) return;
+
+        tickerListContainer.innerHTML = '';
+
+        // Get the ticker list based on mode
+        const tickerList = this.isScreeningMode && this.screeningResults
+            ? this.screeningResults.map(r => r.ticker)
+            : this.availableTickers;
+
+        // Get the current page of tickers
+        const pageEnd = Math.min(this.tickerPageStart + this.tickerPageSize, tickerList.length);
+        const tickersToShow = tickerList.slice(this.tickerPageStart, pageEnd);
+
+        if (this.isScreeningMode && this.screeningResults) {
+            // For screening mode, create screening ticker items
+            const resultsToShow = this.screeningResults.slice(this.tickerPageStart, pageEnd);
+            resultsToShow.forEach(result => {
+                tickerListContainer.appendChild(this.createScreeningTickerItem(result));
+            });
+        } else {
+            // For normal mode, create regular ticker items
+            const tickerPromises = tickersToShow.map(async (ticker) => {
+                return this.createTickerItem(ticker);
+            });
+
+            const tickerItems = await Promise.all(tickerPromises);
+            tickerItems.forEach(item => {
+                tickerListContainer.appendChild(item);
+            });
+        }
+
+        // Update selection highlighting
+        this.updateTickerSelection();
     }
 
     async getTickerDisplayData(ticker) {
@@ -2247,55 +2320,65 @@ class StockApp {
         const tickerList = document.querySelector('.ticker-list');
         if (!tickerList) return;
 
+        // Reset pagination for screening
+        this.tickerPageStart = 0;
+
         // Clear existing list
         tickerList.innerHTML = '';
 
+        // Get first page of screening results
+        const resultsToShow = results.slice(0, this.tickerPageSize);
+
         // Create ticker items from screening results
-        results.forEach(result => {
-            const tickerItem = document.createElement('div');
-            tickerItem.className = 'ticker-item';
-            tickerItem.dataset.ticker = result.ticker;
-
-            // Highlight current ticker
-            if (result.ticker === this.currentTicker) {
-                tickerItem.classList.add('active');
-            }
-
-            // Create ticker name span
-            const tickerNameSpan = document.createElement('span');
-            tickerNameSpan.className = 'ticker-name';
-            tickerNameSpan.textContent = result.ticker;
-
-            // Set color based on current ticker
-            if (result.ticker === this.currentTicker) {
-                tickerNameSpan.style.color = 'white';
-            }
-
-            // Create value span showing the screening result
-            const valueSpan = document.createElement('span');
-            valueSpan.className = 'ticker-percentage';
-            const displayValue = typeof result.value === 'number' && isFinite(result.value)
-                ? result.value.toFixed(2)
-                : String(result.value);
-            valueSpan.textContent = ` (${displayValue})`;
-
-            // Color based on value (positive = green/blue, negative = red/blue)
-            if (this.blueMode) {
-                valueSpan.style.color = '#0080ff';
-            } else {
-                valueSpan.style.color = result.value >= 0 ? '#00ff00' : '#ff0000';
-            }
-
-            tickerItem.appendChild(tickerNameSpan);
-            tickerItem.appendChild(valueSpan);
-
-            // Add click handler
-            tickerItem.addEventListener('click', () => {
-                this.selectTicker(result.ticker);
-            });
-
-            tickerList.appendChild(tickerItem);
+        resultsToShow.forEach(result => {
+            tickerList.appendChild(this.createScreeningTickerItem(result));
         });
+    }
+
+    createScreeningTickerItem(result) {
+        const tickerItem = document.createElement('div');
+        tickerItem.className = 'ticker-item';
+        tickerItem.dataset.ticker = result.ticker;
+
+        // Highlight current ticker
+        if (result.ticker === this.currentTicker) {
+            tickerItem.classList.add('active');
+        }
+
+        // Create ticker name span
+        const tickerNameSpan = document.createElement('span');
+        tickerNameSpan.className = 'ticker-name';
+        tickerNameSpan.textContent = result.ticker;
+
+        // Set color based on current ticker
+        if (result.ticker === this.currentTicker) {
+            tickerNameSpan.style.color = 'white';
+        }
+
+        // Create value span showing the screening result
+        const valueSpan = document.createElement('span');
+        valueSpan.className = 'ticker-percentage';
+        const displayValue = typeof result.value === 'number' && isFinite(result.value)
+            ? result.value.toFixed(2)
+            : String(result.value);
+        valueSpan.textContent = ` (${displayValue})`;
+
+        // Color based on value (positive = green/blue, negative = red/blue)
+        if (this.blueMode) {
+            valueSpan.style.color = '#0080ff';
+        } else {
+            valueSpan.style.color = result.value >= 0 ? '#00ff00' : '#ff0000';
+        }
+
+        tickerItem.appendChild(tickerNameSpan);
+        tickerItem.appendChild(valueSpan);
+
+        // Add click handler
+        tickerItem.addEventListener('click', () => {
+            this.selectTicker(result.ticker);
+        });
+
+        return tickerItem;
     }
 
     async resetTickerList() {
