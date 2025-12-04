@@ -1,3 +1,5 @@
+<img width="1920" height="1200" alt="image" src="https://github.com/user-attachments/assets/b714a4b5-3b0b-4fc8-96b2-70511c590770" />
+
 # Blink Technical Stock Analysis
 
 A comprehensive technical stock analysis web application.
