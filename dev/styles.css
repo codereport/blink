@@ -297,14 +297,16 @@ body {
 }
 
 .expression-sidebar {
-    width: 200px;
+    width: 230px;
     background-color: #0a0a0a;
     border: 1px solid #2a2a2a;
     border-radius: 4px;
     padding: 10px;
+    padding-right: 35px; /* Extra space for prefix arrows */
     display: none; /* Hidden by default */
     flex-direction: column;
     overflow-y: auto;
+    position: relative;
 }
 
 .expression-sidebar.visible {
@@ -315,6 +317,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    position: relative;
 }
 
 .expression-item {
@@ -364,6 +367,30 @@ body {
 .expression-item .expr-result {
     color: white;
     font-size: 11px;
+}
+
+/* Prefix expression styles */
+.expression-item.prefix-expression {
+    border-color: #0080ff;
+    border-style: dashed;
+    background-color: #0a1520;
+}
+
+.expression-item.prefix-expression.active {
+    border-color: #00aaff;
+    background-color: #0a1a30;
+}
+
+.prefix-arrow-container {
+    position: absolute;
+    right: -5px;
+    top: 0;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.prefix-arrow-svg {
+    overflow: visible;
 }
 
 .ticker-sidebar {

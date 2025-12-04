@@ -88,10 +88,11 @@ class StockApp {
         this.isBacktickMode = false;
 
         // Expression list and results
-        this.expressions = []; // Array of {id, expression, result, resultType: 'scalar'|'array', resultData}
+        this.expressions = []; // Array of {id, expression, result, resultType: 'scalar'|'array', resultData, prefixOf: id|null}
         this.currentExpressionIndex = 0;
         this.expressionResultChart = null;
         this.editingExpressionIndex = null; // Track which expression is being edited (null = creating new)
+        this.prefixingExpressionIndex = null; // Track which expression we're creating a prefix for
 
         // Stock screening state
         this.screeningResults = null;
@@ -223,6 +224,10 @@ class StockApp {
             } else if (e.key === 'i' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.toggleCompanyInfo();
+            } else if (e.key === '?' && e.shiftKey && e.target !== tickerInput) {
+                // Shift+/ (which is ?) - open prefix DSL popup
+                e.preventDefault();
+                this.showPrefixDslPopup();
             } else if (e.key === '/' && e.target !== tickerInput) {
                 e.preventDefault();
                 this.showDslPopup();
@@ -483,10 +488,14 @@ class StockApp {
             this.isDslVisible = false;
             // Clear editing state
             this.editingExpressionIndex = null;
+            // Clear prefixing state
+            this.prefixingExpressionIndex = null;
             // Clear the input and result
             const dslInput = document.getElementById('dsl-input');
             if (dslInput) {
                 dslInput.innerHTML = '';
+                // Reset placeholder to default
+                dslInput.setAttribute('data-placeholder', 'Enter expression...');
             }
             const dslResult = document.getElementById('dsl-result');
             if (dslResult) {
@@ -496,12 +505,110 @@ class StockApp {
         }
     }
 
+    showPrefixDslPopup() {
+        // Need at least one expression to prefix
+        if (this.expressions.length === 0) {
+            console.log('No expressions to prefix');
+            return;
+        }
+
+        // Track which expression we're prefixing
+        this.prefixingExpressionIndex = this.currentExpressionIndex;
+
+        // Show the DSL popup
+        this.showDslPopup();
+
+        // Update placeholder to indicate prefix mode
+        const dslInput = document.getElementById('dsl-input');
+        if (dslInput) {
+            dslInput.setAttribute('data-placeholder', 'Enter prefix...');
+        }
+    }
+
     async processDslExpression() {
         const dslInput = document.getElementById('dsl-input');
         if (!dslInput) return;
 
         const expression = this.getTextContent(dslInput);
         if (!expression.trim()) {
+            this.hideDslPopup();
+            return;
+        }
+
+        // Check if we're in prefix mode
+        if (this.prefixingExpressionIndex !== null) {
+            // Create a prefix expression that points to the target expression
+            const targetExpr = this.expressions[this.prefixingExpressionIndex];
+            if (!targetExpr) {
+                this.hideDslPopup();
+                return;
+            }
+
+            // Combine prefix with target's full expression (recursively built) and transpile
+            const targetFullExpr = this.buildFullExpression(targetExpr);
+            const combinedExpression = expression + targetFullExpr;
+            const dataLength = this.tradingDaysData.length;
+
+            try {
+                const response = await fetch('/api/transpile', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        expression: combinedExpression,
+                        ticker: this.currentTicker,
+                        dataLength: dataLength.toString()
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                if (result.success) {
+                    const output = result.output.trim();
+                    const parsed = this.parseExpressionResult(output);
+
+                    // Create the prefix expression with transpiled result
+                    const prefixData = {
+                        id: Date.now(),
+                        expression: expression,  // Store just the prefix for display
+                        fullExpression: combinedExpression,  // Store the full combined expression
+                        result: output,
+                        resultType: parsed.type,
+                        resultData: parsed.data,
+                        ticker: this.currentTicker,
+                        dataLength: dataLength,
+                        parrotStatus: 'pending',
+                        parrotHash: null,
+                        parrotVerified: null,
+                        prefixOf: targetExpr.id  // Link to the target expression
+                    };
+
+                    // Insert the prefix expression right after the target expression
+                    this.expressions.splice(this.prefixingExpressionIndex + 1, 0, prefixData);
+                    this.currentExpressionIndex = this.prefixingExpressionIndex + 1;
+
+                    // Update UI
+                    this.updateExpressionList();
+                    this.updateExpressionResultViewer();
+
+                    console.log('Prefix expression added:', prefixData);
+
+                    // Start Parrot CUDA compilation in background
+                    this.startParrotCompilation(prefixData);
+                } else {
+                    console.error('Transpile error:', result.error);
+                    alert(`Error: ${result.error}`);
+                }
+            } catch (error) {
+                console.error('Error processing prefix expression:', error);
+                alert(`Error: ${error.message}`);
+            }
+
             this.hideDslPopup();
             return;
         }
@@ -570,7 +677,8 @@ class StockApp {
                         dataLength: dataLength,       // Store data length
                         parrotStatus: 'pending',      // Parrot compilation status: pending, compiling, compiled, failed
                         parrotHash: null,             // Hash for tracking compilation
-                        parrotVerified: null          // Verification status: null (not verified), true (matches), false (mismatch)
+                        parrotVerified: null,         // Verification status: null (not verified), true (matches), false (mismatch)
+                        prefixOf: null                // Not a prefix expression
                     };
 
                     this.expressions.push(expressionData);
@@ -598,11 +706,35 @@ class StockApp {
         this.hideDslPopup();
     }
 
+    getParrotExpression(expressionData) {
+        // For prefix expressions, recursively build the full expression
+        // by following the prefixOf chain
+        return this.buildFullExpression(expressionData);
+    }
+
+    buildFullExpression(expressionData) {
+        // If this expression has a prefixOf link, we need to combine it with the target
+        if (expressionData.prefixOf !== null && expressionData.prefixOf !== undefined) {
+            // Find the target expression
+            const targetExpr = this.expressions.find(e => e.id === expressionData.prefixOf);
+            if (targetExpr) {
+                // Recursively build the target's full expression, then prepend our prefix
+                const targetFullExpr = this.buildFullExpression(targetExpr);
+                return expressionData.expression + targetFullExpr;
+            }
+        }
+        // Base case: no prefixOf, just return the expression itself
+        return expressionData.expression;
+    }
+
     async startParrotCompilation(expressionData) {
         // Start Parrot CUDA compilation in background
         try {
             expressionData.parrotStatus = 'compiling';
             this.updateExpressionList();
+
+            const parrotExpr = this.getParrotExpression(expressionData);
+            console.log(`🔧 Starting Parrot compilation for: ${parrotExpr}`);
 
             const response = await fetch('/api/parrot/compile', {
                 method: 'POST',
@@ -610,7 +742,7 @@ class StockApp {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    expression: expressionData.expression
+                    expression: parrotExpr
                 })
             });
 
@@ -644,6 +776,8 @@ class StockApp {
     async pollParrotCompilation(expressionData) {
         // Poll for compilation status every 2 seconds
         // Use status-by-expr since hash is based on generated code, not expression
+        const parrotExpr = this.getParrotExpression(expressionData);
+
         const pollInterval = setInterval(async () => {
             try {
                 const response = await fetch('/api/parrot/status-by-expr', {
@@ -652,7 +786,7 @@ class StockApp {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        expression: expressionData.expression
+                        expression: parrotExpr
                     })
                 });
                 const result = await response.json();
@@ -694,13 +828,16 @@ class StockApp {
     async verifyParrotResult(expressionData) {
         // Verify Parrot CUDA result against BQN result
         try {
+            const parrotExpr = this.getParrotExpression(expressionData);
+            console.log(`🔍 Verifying Parrot result for: ${parrotExpr}`);
+
             const response = await fetch('/api/parrot/verify', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    expression: expressionData.expression,
+                    expression: parrotExpr,
                     ticker: expressionData.ticker,
                     dataLength: expressionData.dataLength,
                     bqnResult: expressionData.resultData
@@ -1454,51 +1591,66 @@ class StockApp {
                 item.classList.add('active');
             }
             item.dataset.index = index;
+            item.dataset.exprId = expr.id;
+
+            // Check if this is a prefix expression (has a prefixOf link)
+            const isPrefix = expr.prefixOf !== null && expr.prefixOf !== undefined;
+            if (isPrefix) {
+                item.classList.add('prefix-expression');
+            }
 
             // Parrot status container in top-right corner (compilation + verification)
-            const parrotStatus = document.createElement('div');
-            parrotStatus.className = 'parrot-status';
+            // Show for all expressions including prefix expressions
+            {
+                const parrotStatus = document.createElement('div');
+                parrotStatus.className = 'parrot-status';
 
-            // First emoji: compilation status
-            let compilationEmoji = '';
-            let compilationTitle = '';
-            switch (expr.parrotStatus) {
-                case 'compiling':
-                    compilationEmoji = '🟡';
-                    compilationTitle = 'Compiling CUDA...';
-                    break;
-                case 'compiled':
-                    compilationEmoji = '✅';
-                    compilationTitle = 'CUDA compiled';
-                    break;
-                case 'failed':
-                    compilationEmoji = '❌';
-                    compilationTitle = 'CUDA compilation failed';
-                    break;
-                default:
-                    compilationEmoji = '';
-                    break;
-            }
-
-            // Second emoji: verification status (only shown after compilation)
-            let verificationEmoji = '';
-            let verificationTitle = '';
-            if (expr.parrotStatus === 'compiled') {
-                if (expr.parrotVerified === true) {
-                    verificationEmoji = '✅';
-                    verificationTitle = 'Results match BQN';
-                } else if (expr.parrotVerified === false) {
-                    verificationEmoji = '❌';
-                    verificationTitle = 'Results DO NOT match BQN';
-                } else {
-                    verificationEmoji = '⏳';
-                    verificationTitle = 'Verifying...';
+                // First emoji: compilation status
+                let compilationEmoji = '';
+                let compilationTitle = '';
+                switch (expr.parrotStatus) {
+                    case 'compiling':
+                        // Show checkmark with yellow indicator when recompiling
+                        compilationEmoji = '✅🟡';
+                        compilationTitle = 'Recompiling CUDA...';
+                        break;
+                    case 'compiled':
+                        compilationEmoji = '✅';
+                        compilationTitle = 'CUDA compiled';
+                        break;
+                    case 'failed':
+                        compilationEmoji = '❌';
+                        compilationTitle = 'CUDA compilation failed';
+                        break;
+                    case 'pending':
+                        compilationEmoji = '⏳';
+                        compilationTitle = 'Pending compilation...';
+                        break;
+                    default:
+                        compilationEmoji = '';
+                        break;
                 }
-            }
 
-            parrotStatus.textContent = compilationEmoji + verificationEmoji;
-            parrotStatus.title = [compilationTitle, verificationTitle].filter(t => t).join(' | ');
-            item.appendChild(parrotStatus);
+                // Second emoji: verification status (only shown after compilation)
+                let verificationEmoji = '';
+                let verificationTitle = '';
+                if (expr.parrotStatus === 'compiled') {
+                    if (expr.parrotVerified === true) {
+                        verificationEmoji = '✅';
+                        verificationTitle = 'Results match BQN';
+                    } else if (expr.parrotVerified === false) {
+                        verificationEmoji = '❌';
+                        verificationTitle = 'Results DO NOT match BQN';
+                    } else {
+                        verificationEmoji = '⏳';
+                        verificationTitle = 'Verifying...';
+                    }
+                }
+
+                parrotStatus.textContent = compilationEmoji + verificationEmoji;
+                parrotStatus.title = [compilationTitle, verificationTitle].filter(t => t).join(' | ');
+                item.appendChild(parrotStatus);
+            }
 
             const exprText = document.createElement('div');
             exprText.className = 'expr-text';
@@ -1521,12 +1673,16 @@ class StockApp {
 
             item.appendChild(exprText);
 
+            // Result text
             const resultText = document.createElement('div');
             resultText.className = 'expr-result';
             if (expr.resultType === 'scalar') {
                 resultText.textContent = `= ${expr.resultData}`;
-            } else {
+            } else if (expr.resultData && Array.isArray(expr.resultData)) {
                 resultText.textContent = `[${expr.resultData.length} values]`;
+            } else if (isPrefix) {
+                resultText.textContent = '(prefix)';
+                resultText.style.color = '#888';
             }
 
             item.appendChild(resultText);
@@ -1538,6 +1694,90 @@ class StockApp {
             });
 
             expressionList.appendChild(item);
+        });
+
+        // After all items are rendered, add curved arrows for prefix expressions
+        // Use requestAnimationFrame to ensure DOM is fully laid out
+        requestAnimationFrame(() => {
+            this.renderPrefixArrows();
+        });
+    }
+
+    renderPrefixArrows() {
+        // Remove any existing arrow containers
+        const existingArrows = document.querySelectorAll('.prefix-arrow-container');
+        existingArrows.forEach(el => el.remove());
+
+        const expressionList = document.querySelector('.expression-list');
+        if (!expressionList) return;
+
+        this.expressions.forEach((expr, index) => {
+            if (expr.prefixOf === null || expr.prefixOf === undefined) return;
+
+            // Find the target expression (prefix is now BELOW the target)
+            const targetIndex = this.expressions.findIndex(e => e.id === expr.prefixOf);
+            if (targetIndex === -1 || targetIndex >= index) return; // Target must be before prefix (above it)
+
+            // Get the DOM elements
+            const prefixItem = expressionList.querySelector(`[data-expr-id="${expr.id}"]`);
+            const targetItem = expressionList.querySelector(`[data-expr-id="${expr.prefixOf}"]`);
+
+            if (!prefixItem || !targetItem) return;
+
+            // Create the arrow container
+            const arrowContainer = document.createElement('div');
+            arrowContainer.className = 'prefix-arrow-container';
+
+            // Create SVG curved arrow
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('class', 'prefix-arrow-svg');
+
+            // Calculate positions relative to expression list
+            const listRect = expressionList.getBoundingClientRect();
+            const prefixRect = prefixItem.getBoundingClientRect();
+            const targetRect = targetItem.getBoundingClientRect();
+
+            // Arrow starts from right side of prefix item (bottom), curves up to right side of target (top)
+            const prefixY = prefixRect.top - listRect.top + prefixRect.height / 2;
+            const targetY = targetRect.top - listRect.top + targetRect.height / 2;
+            const height = prefixY - targetY + 20;
+
+            svg.setAttribute('width', '30');
+            svg.setAttribute('height', String(height));
+            svg.style.position = 'absolute';
+            svg.style.right = '-25px';
+            svg.style.top = `${-height + prefixRect.height / 2 + 10}px`;
+            svg.style.overflow = 'visible';
+
+            // Create curved path
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            const curveOffset = 22;  // How far the curve extends to the right
+            const startX = 5;
+            const endX = 5;
+            const midY = height / 2;
+
+            // Curved arrow path: start at bottom (prefix), curve right, go up, curve left to end (target)
+            const d = `M ${startX} ${height - 10} 
+                       Q ${startX + curveOffset} ${height - 10}, ${startX + curveOffset} ${midY} 
+                       Q ${startX + curveOffset} 10, ${endX} 10`;
+
+            path.setAttribute('d', d);
+            path.setAttribute('fill', 'none');
+            path.setAttribute('stroke', '#0080ff');
+            path.setAttribute('stroke-width', '2');
+
+            // Add arrowhead pointing up (to the target)
+            const arrowhead = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            arrowhead.setAttribute('points', `${endX - 4},15 ${endX},10 ${endX + 4},15`);
+            arrowhead.setAttribute('fill', '#0080ff');
+
+            svg.appendChild(path);
+            svg.appendChild(arrowhead);
+            arrowContainer.appendChild(svg);
+
+            // Append to the prefix item
+            prefixItem.style.position = 'relative';
+            prefixItem.appendChild(arrowContainer);
         });
     }
 
@@ -1558,9 +1798,12 @@ class StockApp {
         if (currentExpr.resultType === 'scalar') {
             // Display scalar result
             this.displayScalarResult(currentExpr);
-        } else {
+        } else if (currentExpr.resultData && Array.isArray(currentExpr.resultData)) {
             // Display array result as line chart
             this.displayArrayResult(currentExpr);
+        } else {
+            // No result data to display
+            wrapper.classList.remove('visible');
         }
     }
 
@@ -1654,6 +1897,15 @@ class StockApp {
         for (let i = 0; i < this.expressions.length; i++) {
             const expr = this.expressions[i];
 
+            // Use buildFullExpression to recursively build the full expression
+            // This handles chains of prefixes correctly
+            const expressionToTranspile = this.buildFullExpression(expr);
+            
+            // Update the stored fullExpression for prefix expressions
+            if (expr.prefixOf !== null && expr.prefixOf !== undefined) {
+                expr.fullExpression = expressionToTranspile;
+            }
+
             try {
                 const response = await fetch('/api/transpile', {
                     method: 'POST',
@@ -1661,14 +1913,14 @@ class StockApp {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        expression: expr.expression,
+                        expression: expressionToTranspile,
                         ticker: this.currentTicker,
                         dataLength: dataLength.toString()
                     })
                 });
 
                 if (!response.ok) {
-                    console.error(`Failed to recompute expression: ${expr.expression}`);
+                    console.error(`Failed to recompute expression: ${expressionToTranspile}`);
                     continue;
                 }
 
@@ -1686,7 +1938,7 @@ class StockApp {
                     this.expressions[i].dataLength = dataLength;
                 }
             } catch (error) {
-                console.error(`Error recomputing expression ${expr.expression}:`, error);
+                console.error(`Error recomputing expression ${expressionToTranspile}:`, error);
             }
         }
 
@@ -1715,7 +1967,9 @@ class StockApp {
             return;
         }
 
-        console.log('Screening stocks with expression:', currentExpr.expression);
+        // Get the full expression (handles prefix chains recursively)
+        const fullExpression = this.buildFullExpression(currentExpr);
+        console.log('Screening stocks with expression:', fullExpression);
 
         // Show loading indicator
         const statusText = document.getElementById('status-text');
@@ -1730,7 +1984,7 @@ class StockApp {
             }
             const allTickers = await response.json();
 
-            statusText.textContent = `Screening ${allTickers.length} stocks with expression: ${currentExpr.expression}...`;
+            statusText.textContent = `Screening ${allTickers.length} stocks with expression: ${fullExpression}...`;
 
             // Calculate data length to use (current view's length)
             const dataLength = this.tradingDaysData.length;
@@ -1749,7 +2003,7 @@ class StockApp {
                             'Content-Type': 'application/json',
                         },
                         body: JSON.stringify({
-                            expression: currentExpr.expression,
+                            expression: fullExpression,
                             ticker: ticker,
                             dataLength: dataLength.toString()
                         })
