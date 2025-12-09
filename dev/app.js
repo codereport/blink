@@ -436,6 +436,7 @@ class StockApp {
                     this.translateDslKeywords();
                 } else if (e.key === 'Enter') {
                     e.preventDefault();
+                    this.translateDslKeywords(); // Auto-convert keywords before processing
                     this.processDslExpression();
                 } else if (e.key === '`') {
                     // Enter backtick mode - don't show the backtick
@@ -1976,7 +1977,7 @@ class StockApp {
             // Use buildFullExpression to recursively build the full expression
             // This handles chains of prefixes correctly
             const expressionToTranspile = this.buildFullExpression(expr);
-            
+
             // Update the stored fullExpression for prefix expressions
             if (expr.prefixOf !== null && expr.prefixOf !== undefined) {
                 expr.fullExpression = expressionToTranspile;
@@ -2201,7 +2202,7 @@ class StockApp {
             // Check initial compile response - it might already be cached/compiled
             const compileResult = await compileResponse.json();
             console.log('CUDA compile response:', compileResult);
-            
+
             if (compileResult.status === 'compiled' || compileResult.cached) {
                 // Already compiled, no need to wait
                 compiled = true;
