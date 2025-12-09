@@ -513,6 +513,23 @@ class StockApp {
         }
     }
 
+    showToast(message, duration = 1500) {
+        const toast = document.getElementById('toast-notification');
+        if (!toast) return;
+
+        toast.textContent = message;
+        toast.classList.remove('hidden');
+
+        // Auto-hide after duration
+        setTimeout(() => {
+            toast.style.animation = 'toast-fade-out 0.2s ease-out forwards';
+            setTimeout(() => {
+                toast.classList.add('hidden');
+                toast.style.animation = '';
+            }, 200);
+        }, duration);
+    }
+
     showPrefixDslPopup() {
         // Need at least one expression to prefix
         if (this.expressions.length === 0) {
@@ -2040,7 +2057,7 @@ class StockApp {
         }
 
         if (currentExpr.resultType !== 'scalar') {
-            alert('Screening only works with scalar (single value) expressions.\nThe current expression returns an array.');
+            this.showToast('⚠️ Screening only works with scalar expressions. The current expression returns an array.');
             return;
         }
 
@@ -2168,7 +2185,7 @@ class StockApp {
         }
 
         if (currentExpr.resultType !== 'scalar') {
-            alert('CUDA screening only works with scalar (single value) expressions.\nThe current expression returns an array.');
+            this.showToast('⚠️ CUDA screening only works with scalar expressions. The current expression returns an array.');
             return;
         }
 
